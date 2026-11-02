@@ -1,0 +1,143 @@
+import { createInitialState, previewUsers } from '../data/fixtures'
+import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing } from '../lib/utils'
+import type { ContactAttempt, CrmState, FollowUp, Lead, LeadFilters, Qualification, User } from '../types'
+
+const STORAGE_KEY = 'kennix.crm.state.v1'
+export const PREVIEW_PASSWORD = 'Preview@123'
+
+function clone<T>(value: T): T { return structuredClone(value) }
+function now() { return new Date().toISOString() }
+function uid(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
+function assertTelesalesEditable(lead: Lead) {
+  if (lead.stage === 'Qualified') throw new Error('This journey has been sent to Sales and is read-only in Telesales')
+}
+
+export class LocalCrmService {
+  private read(): CrmState {
+    const value = localStorage.getItem(STORAGE_KEY)
+    if (!value) {
+      const state = createInitialState()
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+      return state
+    }
+    try {
+      const state = JSON.parse(value) as CrmState
+      state.leads.forEach(lead => {
+        if (lead.qualification.interestConfirmed === undefined) {
+          lead.qualification.interestConfirmed = Boolean(lead.qualification.verifiedContact && lead.qualification.propertyRequirement)
+        }
+        if (lead.stage === 'Contacted' && qualificationMissing(lead.qualification).length === 0) {
+          lead.stage = 'Qualification'
+          lead.nextAction = 'Review qualification and send to Sales'
+        }
+      })
+      this.write(state)
+      return state
+    } catch { const state = createInitialState(); this.write(state); return state }
+  }
+  private write(state: CrmState) { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) }
+  async getSnapshot() { return clone(this.read()) }
+  async listUsers() { return clone(previewUsers) }
+  async login(email: string, password: string): Promise<User | null> {
+    if (password !== PREVIEW_PASSWORD) return null
+    return clone(previewUsers.find(user => user.email.toLowerCase() === email.trim().toLowerCase()) ?? null)
+  }
+  async listLeads(filters: LeadFilters = {}, user?: User) {
+    let leads = this.read().leads
+    if (user && (user.role === 'executive' || user.role === 'senior_executive')) leads = leads.filter(lead => lead.ownerId === user.id)
+    if (filters.search) {
+      const search = filters.search.toLowerCase()
+      leads = leads.filter(lead => [lead.journeyId, lead.name, lead.email, lead.phone, lead.city, lead.requirement].some(value => value.toLowerCase().includes(search)))
+    }
+    if (filters.stage && filters.stage !== 'All') leads = leads.filter(lead => lead.stage === filters.stage)
+    if (filters.source && filters.source !== 'All') leads = leads.filter(lead => lead.source === filters.source)
+    if (filters.ownerId && filters.ownerId !== 'All') leads = leads.filter(lead => lead.ownerId === filters.ownerId)
+    if (filters.type && filters.type !== 'All') leads = leads.filter(lead => lead.type === filters.type)
+    return clone(leads)
+  }
+  async getJourney(journeyId: string) { return clone(this.read().leads.find(lead => lead.journeyId === journeyId) ?? null) }
+  async createLead(input: Pick<Lead, 'name'|'email'|'phone'|'city'|'type'|'source'|'requirement'|'budget'|'timeline'|'landStatus'|'priority'>, actor: User) {
+    if (!canManage(actor.role)) throw new Error('Only a Team Lead or CRM Manager can create leads')
+    const state = this.read()
+    const journeyId = generateJourneyId(state.leads)
+    const ownerPool = ['usr-priya', 'usr-arjun']
+    const ownerId = ownerPool[state.assignmentCursor % ownerPool.length]
+    const normalizedEmail = normalizeEmail(input.email)
+    const normalizedPhone = normalizePhone(input.phone)
+    const duplicate = state.leads.find(lead => normalizeEmail(lead.email) === normalizedEmail || normalizePhone(lead.phone) === normalizedPhone)
+    const customerId = duplicate?.customerId ?? `CUS-${String(1100 + state.customers.length).padStart(5, '0')}`
+    const lead: Lead = {
+      ...input, journeyId, customerId, ownerId, stage: 'New', createdAt: now(), nextAction: 'Make first contact', nextActionAt: '2026-11-02T10:00:00+05:30',
+      duplicateOf: duplicate?.journeyId, duplicateStatus: duplicate ? 'Pending review' : undefined,
+      qualification: { verifiedContact: false, interestConfirmed: false, customerType: input.type, propertyRequirement: input.requirement, budget: input.budget, timeline: input.timeline, location: input.city, landStatus: input.landStatus, source: input.source, consent: false },
+      contacts: [], notes: [], documents: [], activities: [
+        { id: uid('ACT'), type: 'Lead created', description: `${input.source} lead captured and ${journeyId} created.`, actor: actor.name, createdAt: now() },
+        { id: uid('ACT'), type: 'Assignment', description: `Assigned to ${previewUsers.find(user => user.id === ownerId)?.name} through round-robin.`, actor: 'System', createdAt: now() },
+      ],
+    }
+    state.leads.unshift(lead)
+    state.assignmentCursor += 1
+    state.followUps.unshift({ id: uid('FU'), journeyId, title: 'Make first contact', type: 'Call', dueAt: lead.nextActionAt!, priority: input.priority, status: 'Open', ownerId, reminderChannels: ['In-app'], history: [] })
+    const customer = state.customers.find(item => item.id === customerId)
+    if (customer) customer.journeyIds.push(journeyId)
+    else state.customers.unshift({ id: customerId, name: input.name, email: input.email, phone: input.phone, city: input.city, consent: false, journeyIds: [journeyId], since: lead.createdAt })
+    this.write(state)
+    return clone(lead)
+  }
+  async saveQualification(journeyId: string, qualification: Qualification) {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    lead.qualification = qualification; lead.stage = 'Qualification'; lead.activities.unshift({ id: uid('ACT'), type: 'Qualification updated', description: 'Qualification draft saved.', actor: 'Current user', createdAt: now() }); this.write(state)
+  }
+  async logContactAttempt(journeyId: string, input: Omit<ContactAttempt, 'id'|'date'|'employee'|'followUpId'> & { employee: string; followUpAt?: string }) {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    let followUpId: string | undefined
+    if (input.followUpAt) {
+      followUpId = uid('FU'); state.followUps.unshift({ id: followUpId, journeyId, title: input.disposition === 'No answer' ? 'Retry contact' : 'Requested callback', type: 'Call', dueAt: input.followUpAt, priority: lead.priority, status: 'Open', ownerId: lead.ownerId, reminderChannels: ['In-app'], history: [] }); lead.nextActionAt = input.followUpAt; lead.nextAction = input.disposition === 'No answer' ? 'Retry contact' : 'Requested callback'
+    }
+    lead.contacts.unshift({ id: uid('CA'), date: now(), followUpId, ...input })
+    lead.stage = input.disposition === 'No answer' ? 'Attempted' : 'Contacted'
+    lead.activities.unshift({ id: uid('ACT'), type: 'Contact attempt', description: `${input.direction} contact logged: ${input.disposition}.`, actor: input.employee, createdAt: now() }); this.write(state)
+  }
+  async scheduleFollowUp(journeyId: string, input: Omit<FollowUp, 'id'|'journeyId'|'status'|'history'>) {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    const followUp: FollowUp = { ...input, id: uid('FU'), journeyId, status: 'Open', history: [] }; state.followUps.unshift(followUp); lead.nextAction = input.title; lead.nextActionAt = input.dueAt; lead.activities.unshift({ id: uid('ACT'), type: 'Follow-up scheduled', description: `${input.title} scheduled.`, actor: 'Current user', createdAt: now() }); this.write(state)
+  }
+  async updateFollowUp(id: string, action: 'complete'|'reschedule', dueAt?: string) {
+    const state = this.read(); const followUp = state.followUps.find(item => item.id === id); if (!followUp) throw new Error('Follow-up not found')
+    if (action === 'complete') { followUp.status = 'Completed'; followUp.history.unshift(`Completed ${now()}`) }
+    else if (dueAt) { followUp.status = 'Open'; followUp.history.unshift(`Rescheduled from ${followUp.dueAt}`); followUp.dueAt = dueAt }
+    const lead = state.leads.find(item => item.journeyId === followUp.journeyId); if (lead) { assertTelesalesEditable(lead); lead.activities.unshift({ id: uid('ACT'), type: action === 'complete' ? 'Follow-up completed' : 'Follow-up rescheduled', description: followUp.title, actor: 'Current user', createdAt: now() }) } this.write(state)
+  }
+  async changeStage(journeyId: string, action: 'nurture'|'lost'|'qualify', reason?: string) {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    if (action === 'qualify') { lead.stage = 'Qualified'; lead.handoffReference = `KX-SH-${journeyId.slice(-6)}`; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined; lead.activities.unshift({ id: uid('ACT'), type: 'Sales handoff', description: `Qualified journey sent to Sales as ${lead.handoffReference}.`, actor: 'Current user', createdAt: now() }) }
+    if (action === 'nurture') { lead.stage = 'Nurture'; lead.nurtureReason = reason; lead.nextAction = 'Nurture check-in'; lead.activities.unshift({ id: uid('ACT'), type: 'Moved to Nurture', description: reason || 'Journey placed in nurture.', actor: 'Current user', createdAt: now() }) }
+    if (action === 'lost') { lead.stage = 'Lost'; lead.lostReason = reason; lead.nextAction = 'Journey closed'; lead.nextActionAt = undefined; lead.activities.unshift({ id: uid('ACT'), type: 'Marked Lost', description: reason || 'Journey closed.', actor: 'Current user', createdAt: now() }) }
+    this.write(state)
+  }
+  async reassign(journeyId: string, ownerId: string, reason: string, actor: User) {
+    if (!canManage(actor.role)) throw new Error('Only a Team Lead or CRM Manager can reassign leads')
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    const oldOwner = lead.ownerId; lead.ownerId = ownerId; state.followUps.filter(item => item.journeyId === journeyId && item.status === 'Open').forEach(item => { item.ownerId = ownerId }); lead.activities.unshift({ id: uid('ACT'), type: 'Reassigned', description: `Sole ownership changed from ${previewUsers.find(user => user.id === oldOwner)?.name} to ${previewUsers.find(user => user.id === ownerId)?.name}. Reason: ${reason}`, actor: actor.name, createdAt: now() }); this.write(state)
+  }
+  async resolveDuplicate(journeyId: string, resolution: 'link'|'no-duplicate') {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    if (resolution === 'link' && lead.duplicateOf) { const original = state.leads.find(item => item.journeyId === lead.duplicateOf); if (original) { lead.customerId = original.customerId; const customer = state.customers.find(item => item.id === original.customerId); if (customer && !customer.journeyIds.includes(journeyId)) customer.journeyIds.push(journeyId) } lead.duplicateStatus = 'Linked' }
+    else lead.duplicateStatus = 'No duplicate'
+    lead.activities.unshift({ id: uid('ACT'), type: 'Duplicate review', description: resolution === 'link' ? 'Linked as a separate journey under the existing customer.' : 'Reviewed and marked as no duplicate.', actor: 'Current user', createdAt: now() }); this.write(state)
+  }
+  async addNote(journeyId: string, text: string, author: string, pinned = false) {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    lead.notes.unshift({ id: uid('N'), text, author, createdAt: now(), pinned }); lead.activities.unshift({ id: uid('ACT'), type: 'Note added', description: pinned ? 'Pinned internal note added.' : 'Internal note added.', actor: author, createdAt: now() }); this.write(state)
+  }
+  reset() { localStorage.removeItem(STORAGE_KEY) }
+}
+
+export const crmService = new LocalCrmService()

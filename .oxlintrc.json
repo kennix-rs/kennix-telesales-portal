@@ -1,0 +1,7 @@
+{
+  "rules": {
+    "react/only-export-components": "off",
+    "react/set-state-in-effect": "off",
+    "react/incompatible-library": "off"
+  }
+}
