@@ -1,6 +1,6 @@
 import { createInitialState, previewUsers } from '../data/fixtures'
 import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing } from '../lib/utils'
-import type { ContactAttempt, CrmState, FollowUp, Lead, LeadFilters, Qualification, User } from '../types'
+import type { ContactAttempt, CrmState, FollowUp, Lead, LeadDisposition, LeadFilters, Qualification, User } from '../types'
 
 const STORAGE_KEY = 'kennix.crm.state.v1'
 export const PREVIEW_PASSWORD = 'Preview@123'
@@ -10,6 +10,7 @@ function now() { return new Date().toISOString() }
 function uid(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
 function assertTelesalesEditable(lead: Lead) {
   if (lead.stage === 'Qualified') throw new Error('This journey has been sent to Sales and is read-only in Telesales')
+  if (lead.stage === 'Lost') throw new Error('This journey is a Dead Lead and is read-only in Telesales')
   if (lead.landSourcingHandoff?.status === 'Submitted') throw new Error('This journey is with Land Sourcing and is read-only in Telesales')
 }
 
@@ -34,6 +35,16 @@ export class LocalCrmService {
         if (lead.qualification.interestConfirmed === undefined) {
           lead.qualification.interestConfirmed = Boolean(lead.qualification.verifiedContact && lead.qualification.propertyRequirement)
         }
+        lead.lastDisposition ??= ({
+          Attempted: 'RNR',
+          Contacted: 'Interested',
+          Qualification: 'Interested',
+          Qualified: 'Interested',
+          Nurture: 'Interested',
+          Lost: 'Not Interested',
+        } as Partial<Record<Lead['stage'], LeadDisposition>>)[lead.stage]
+        qualification.salesMeetingDate ??= ''
+        qualification.salesMeetingTime ??= ''
         if (lead.stage === 'Contacted' && qualificationMissing(lead.qualification).length === 0) {
           lead.stage = 'Qualification'
           lead.nextAction = 'Review qualification and send to Sales'
@@ -101,7 +112,7 @@ export class LocalCrmService {
     lead.timeline = qualification.timeline
     lead.landStatus = qualification.landStatus
     lead.city = qualification.locations.map(location => location.name).join(', ')
-    lead.stage = 'Qualification'
+    if (lead.lastDisposition === 'Interested') lead.stage = 'Qualification'
     lead.activities.unshift({ id: uid('ACT'), type: 'Qualification updated', description: 'Structured requirement draft saved.', actor: 'Current user', createdAt: now() })
     this.write(state)
   }
@@ -142,12 +153,34 @@ export class LocalCrmService {
   async logContactAttempt(journeyId: string, input: Omit<ContactAttempt, 'id'|'date'|'employee'|'followUpId'> & { employee: string; followUpAt?: string }) {
     const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
     assertTelesalesEditable(lead)
+    const followUpDispositions: LeadDisposition[] = ['RNR', 'Call Back Later', 'Switch Off']
+    if (followUpDispositions.includes(input.disposition) && !input.followUpAt) throw new Error('Next call date and time are required for this disposition')
+    state.followUps.filter(item => item.journeyId === journeyId && item.status === 'Open').forEach(item => {
+      item.status = 'Completed'
+      item.history.unshift(`Completed by contact disposition ${now()}`)
+    })
     let followUpId: string | undefined
-    if (input.followUpAt) {
-      followUpId = uid('FU'); state.followUps.unshift({ id: followUpId, journeyId, title: input.disposition === 'No answer' ? 'Retry contact' : 'Requested callback', type: 'Call', dueAt: input.followUpAt, priority: lead.priority, status: 'Open', ownerId: lead.ownerId, reminderChannels: ['In-app'], history: [] }); lead.nextActionAt = input.followUpAt; lead.nextAction = input.disposition === 'No answer' ? 'Retry contact' : 'Requested callback'
+    if (followUpDispositions.includes(input.disposition) && input.followUpAt) {
+      const title = input.disposition === 'RNR' ? 'Retry RNR lead' : input.disposition === 'Switch Off' ? 'Retry switched-off number' : 'Customer callback'
+      followUpId = uid('FU')
+      state.followUps.unshift({ id: followUpId, journeyId, title, type: 'Call', dueAt: input.followUpAt, priority: lead.priority, status: 'Open', ownerId: lead.ownerId, reminderChannels: ['In-app'], history: [] })
+      lead.stage = 'Attempted'
+      lead.nextActionAt = input.followUpAt
+      lead.nextAction = title
+    } else if (input.disposition === 'Interested') {
+      lead.stage = 'Qualification'
+      lead.qualification.verifiedContact = true
+      lead.qualification.interestConfirmed = true
+      lead.nextAction = 'Complete requirements and schedule Sales meeting'
+      lead.nextActionAt = undefined
+    } else {
+      lead.stage = 'Lost'
+      lead.lostReason = 'Not Interested'
+      lead.nextAction = 'Dead lead'
+      lead.nextActionAt = undefined
     }
     lead.contacts.unshift({ id: uid('CA'), date: now(), followUpId, ...input })
-    lead.stage = input.disposition === 'No answer' ? 'Attempted' : 'Contacted'
+    lead.lastDisposition = input.disposition
     lead.activities.unshift({ id: uid('ACT'), type: 'Contact attempt', description: `${input.direction} contact logged: ${input.disposition}.`, actor: input.employee, createdAt: now() }); this.write(state)
   }
   async scheduleFollowUp(journeyId: string, input: Omit<FollowUp, 'id'|'journeyId'|'status'|'history'>) {
@@ -165,6 +198,9 @@ export class LocalCrmService {
     const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
     assertTelesalesEditable(lead)
     if (action === 'qualify') {
+      if (lead.lastDisposition !== 'Interested') throw new Error('Only an Interested lead can be moved to Sales')
+      if (qualificationMissing(lead.qualification).length) throw new Error('Complete the qualification before sending this journey to Sales')
+      if (!lead.qualification.salesMeetingDate || !lead.qualification.salesMeetingTime) throw new Error('Sales meeting date and time are required before handoff')
       if (lead.qualification.landStatus === 'Need to Source Land' && lead.landSourcingHandoff?.status !== 'Land Identified') throw new Error('Complete the Land Sourcing handoff before sending this journey to Sales')
       lead.stage = 'Qualified'; lead.handoffReference = `KX-SH-${journeyId.slice(-6)}`; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined; lead.activities.unshift({ id: uid('ACT'), type: 'Sales handoff', description: `Qualified journey sent to Sales as ${lead.handoffReference}.`, actor: 'Current user', createdAt: now() })
     }

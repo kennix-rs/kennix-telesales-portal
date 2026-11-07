@@ -95,6 +95,46 @@ describe('local CRM service', () => {
     }, executive!)).rejects.toThrow('Only a Team Lead or CRM Manager can create leads')
   })
 
+  it('requires and creates the next call for follow-up dispositions', async () => {
+    await expect(crmService.logContactAttempt('KX-2026-000241', {
+      direction: 'Outbound', duration: 20, disposition: 'RNR', notes: 'Customer did not answer the call.', employee: 'Priya Singh',
+    })).rejects.toThrow('Next call date and time')
+
+    await crmService.logContactAttempt('KX-2026-000241', {
+      direction: 'Outbound', duration: 20, disposition: 'Switch Off', notes: 'Customer phone was switched off.', employee: 'Priya Singh', followUpAt: '2026-11-09T10:30',
+    })
+    const snapshot = await crmService.getSnapshot()
+    const lead = snapshot.leads.find(item => item.journeyId === 'KX-2026-000241')
+    expect(lead).toMatchObject({ stage: 'Attempted', lastDisposition: 'Switch Off', nextActionAt: '2026-11-09T10:30' })
+    expect(snapshot.followUps).toContainEqual(expect.objectContaining({ journeyId: 'KX-2026-000241', dueAt: '2026-11-09T10:30', status: 'Open' }))
+  })
+
+  it('routes Interested and Not Interested dispositions into their buckets', async () => {
+    await crmService.logContactAttempt('KX-2026-000241', {
+      direction: 'Outbound', duration: 180, disposition: 'Interested', notes: 'Customer shared the initial property requirement.', employee: 'Priya Singh',
+    })
+    expect(await crmService.getJourney('KX-2026-000241')).toMatchObject({
+      stage: 'Qualification',
+      lastDisposition: 'Interested',
+      qualification: { verifiedContact: true, interestConfirmed: true },
+    })
+
+    await crmService.logContactAttempt('KX-2026-000243', {
+      direction: 'Outbound', duration: 45, disposition: 'Not Interested', notes: 'Customer confirmed they do not want to proceed.', employee: 'Priya Singh',
+    })
+    expect(await crmService.getJourney('KX-2026-000243')).toMatchObject({ stage: 'Lost', lastDisposition: 'Not Interested', nextAction: 'Dead lead' })
+  })
+
+  it('requires a fixed Sales meeting before handoff', async () => {
+    const lead = await crmService.getJourney('KX-2026-000241')
+    await crmService.saveQualification('KX-2026-000241', {
+      ...lead!.qualification,
+      salesMeetingDate: '',
+      salesMeetingTime: '',
+    })
+    await expect(crmService.changeStage('KX-2026-000241', 'qualify')).rejects.toThrow('Sales meeting date and time')
+  })
+
   it('records a visible Sales handoff while retaining the Journey ID', async () => {
     await crmService.changeStage('KX-2026-000241', 'qualify')
     const lead = await crmService.getJourney('KX-2026-000241')

@@ -36,6 +36,7 @@ function makeLead(index: number): Lead {
   const dueMonth = index % 5 === 0 ? '10' : '11'
   const dueAt = `2026-${dueMonth}-${String(dueDay).padStart(2, '0')}T${String(9 + (index % 8)).padStart(2, '0')}:30:00+05:30`
   const complete = index % 3 === 0 || stage === 'Qualified'
+  const lastDisposition = stage === 'New' ? undefined : stage === 'Attempted' ? (['RNR','Call Back Later','Switch Off'] as const)[index % 3] : stage === 'Lost' ? 'Not Interested' as const : 'Interested' as const
   const customerId = `CUS-${String(1081 + Math.floor(index / (index % 9 === 0 ? 2 : 1))).padStart(5, '0')}`
   const lead: Lead = {
     journeyId: `KX-2026-${String(serial).padStart(6, '0')}`,
@@ -56,6 +57,7 @@ function makeLead(index: number): Lead {
     landStatus: index % 4 === 1 ? 'Need to Source Land' : 'Own Land',
     nextAction: stage === 'Qualified' ? 'Sales handoff completed' : stage === 'Lost' ? 'Journey closed' : stage === 'Nurture' ? 'Monthly nurture check-in' : 'Call and confirm requirement',
     nextActionAt: stage === 'Lost' ? undefined : dueAt,
+    lastDisposition,
     qualification: {
       verifiedContact: complete,
       interestConfirmed: complete,
@@ -69,13 +71,15 @@ function makeLead(index: number): Lead {
       landStatus: complete ? (stage === 'Qualified' || index % 2 === 0 ? 'Own Land' : 'Need to Source Land') : '',
       source,
       consent: complete || index % 4 !== 1,
+      salesMeetingDate: complete && lastDisposition === 'Interested' ? '2026-11-08' : '',
+      salesMeetingTime: complete && lastDisposition === 'Interested' ? '11:30' : '',
       ...(type === 'Group / Community' ? {
         coordinator: complete ? name : '', approximateFamilies: complete ? 18 + index : undefined,
         sharedRequirement: complete ? 'Coordinated low-rise homes with shared green space' : '',
         combinedBudget: complete ? `₹${8 + (index % 6)}–${10 + (index % 6)} crore` : '', commonLocation: complete ? cities[index % cities.length] : '',
       } : {}),
     },
-    contacts: index % 2 === 0 ? [{ id: `CA-${serial}-1`, direction: 'Outbound', date: createdAt, duration: 180 + index * 7, disposition: stage === 'Attempted' ? 'No answer' : 'Connected — requirements discussed', notes: stage === 'Attempted' ? 'Phone rang without response.' : 'Introduced Kennix process and confirmed an initial requirement.', employee: owners[index % owners.length] === 'usr-priya' ? 'Priya Singh' : 'Arjun Nair' }] : [],
+    contacts: stage !== 'New' && index % 2 === 0 ? [{ id: `CA-${serial}-1`, direction: 'Outbound', date: createdAt, duration: 180 + index * 7, disposition: lastDisposition!, notes: stage === 'Attempted' ? 'Customer could not be reached. A next call was scheduled.' : stage === 'Lost' ? 'Customer confirmed they are not interested.' : 'Introduced Kennix process and confirmed an initial requirement.', employee: owners[index % owners.length] === 'usr-priya' ? 'Priya Singh' : 'Arjun Nair' }] : [],
     notes: [{ id: `N-${serial}-1`, text: index % 4 === 0 ? 'Customer prefers a weekend consultation with decision-makers present.' : 'Confirm land documents and site access during the next conversation.', author: index % 2 ? 'Arjun Nair' : 'Priya Singh', createdAt, pinned: index % 6 === 0 }],
     documents: index % 4 === 0 ? [{ id: `DOC-${serial}-1`, name: 'Initial requirement brief.pdf', category: 'Requirement reference', uploadedAt: createdAt, visibility: 'Internal', status: 'Reviewed' }] : [],
     activities: [
@@ -90,8 +94,9 @@ function makeLead(index: number): Lead {
     return {
       ...lead,
       journeyId: 'KX-2026-000241', customerId: 'CUS-01081', name: 'Rahul Sharma', email: 'rahul.sharma@gmail.com', phone: '+91 98765 43210', city: 'Mohali, New Chandigarh', type: 'Individual', stage: 'Qualification', priority: 'High', source: 'Website', ownerId: 'usr-priya', createdAt: '2026-10-18T09:42:00+05:30', requirement: '3 BHK independent residence', budget: '₹1–1.5 Cr', timeline: '1–3 months', landStatus: 'Own Land', nextAction: 'Review qualification and send to Sales', nextActionAt: '2026-10-22T10:30:00+05:30',
-      qualification: { verifiedContact: true, interestConfirmed: true, customerType: 'Individual', propertyRequirement: '3 BHK independent residence', propertyType: 'Individual House (1 Floor / Villa)', budget: '₹1–1.5 Cr', size: '2,000–2,500 sq ft', timeline: '1–3 months', locations: [{ name: 'Mohali', pincode: '160055' }, { name: 'New Chandigarh', pincode: '140901' }], landStatus: 'Own Land', source: 'Website', consent: true },
-      contacts: [{ id: 'CA-241-1', direction: 'Outbound', date: '2026-10-19T11:05:00+05:30', duration: 412, disposition: 'Connected — requirements discussed', notes: 'Rahul owns a plot near New Chandigarh. Asked for a transparent design-to-build process and indicative timelines.', employee: 'Priya Singh', followUpId: 'FU-241' }],
+      lastDisposition: 'Interested',
+      qualification: { verifiedContact: true, interestConfirmed: true, customerType: 'Individual', propertyRequirement: '3 BHK independent residence', propertyType: 'Individual House (1 Floor / Villa)', budget: '₹1–1.5 Cr', size: '2,000–2,500 sq ft', timeline: '1–3 months', locations: [{ name: 'Mohali', pincode: '160055' }, { name: 'New Chandigarh', pincode: '140901' }], landStatus: 'Own Land', source: 'Website', consent: true, salesMeetingDate: '2026-11-08', salesMeetingTime: '11:30' },
+      contacts: [{ id: 'CA-241-1', direction: 'Outbound', date: '2026-10-19T11:05:00+05:30', duration: 412, disposition: 'Interested', notes: 'Rahul owns a plot near New Chandigarh. Asked for a transparent design-to-build process and indicative timelines.', employee: 'Priya Singh', followUpId: 'FU-241' }],
       notes: [{ id: 'N-241-1', text: 'Spouse will join the next consultation. Share the land-document checklist after the call.', author: 'Priya Singh', createdAt: '2026-10-19T11:15:00+05:30', pinned: true }],
       documents: [{ id: 'DOC-241-1', name: 'Mohali plot location.pdf', category: 'Land reference', uploadedAt: '2026-10-19T12:10:00+05:30', visibility: 'Internal', status: 'Review pending' }],
       activities: [activity('A-241-4','Qualification ready','Identity, genuine interest, and initial requirement confirmed.','Priya Singh','2026-10-19T11:14:00+05:30'), activity('A-241-3','Contacted','Requirements discussed during a 6m 52s outbound call.','Priya Singh','2026-10-19T11:05:00+05:30'), activity('A-241-2','Assignment','Assigned to Priya Singh through North Growth round-robin.','System','2026-10-18T09:42:00+05:30'), activity('A-241-1','Lead created','Website consultation form received and Journey ID assigned.','System','2026-10-18T09:42:00+05:30')],

@@ -3,6 +3,7 @@ export type Stage = 'New' | 'Attempted' | 'Contacted' | 'Qualification' | 'Quali
 export type Priority = 'High' | 'Medium' | 'Low'
 export type LeadType = 'Individual' | 'Group / Community'
 export type Source = 'Website' | 'Phone' | 'Referral' | 'Campaign' | 'Walk-in' | 'Partner'
+export type LeadDisposition = 'RNR' | 'Call Back Later' | 'Switch Off' | 'Interested' | 'Not Interested'
 export type FollowUpStatus = 'Open' | 'Completed' | 'Rescheduled'
 export type BudgetRange = 'Below ₹1 Cr' | '₹1–1.5 Cr' | '₹1.5–2 Cr' | '₹2–3 Cr' | '₹3–4 Cr' | '₹4 Cr+'
 export type PropertySize = '1,000–1,500 sq ft' | '1,500–2,000 sq ft' | '2,000–2,500 sq ft' | '2,500–3,000 sq ft' | '3,000–3,500 sq ft' | '3,500+ sq ft'
@@ -40,6 +41,8 @@ export interface Qualification {
   sharedRequirement?: string
   combinedBudget?: string
   commonLocation?: string
+  salesMeetingDate?: string
+  salesMeetingTime?: string
 }
 
 export interface RequirementLocation {
@@ -63,7 +66,7 @@ export interface ContactAttempt {
   direction: 'Inbound' | 'Outbound'
   date: string
   duration: number
-  disposition: string
+  disposition: LeadDisposition
   notes: string
   employee: string
   followUpId?: string
@@ -126,6 +129,7 @@ export interface Lead {
   landStatus: string
   nextAction: string
   nextActionAt?: string
+  lastDisposition?: LeadDisposition
   duplicateOf?: string
   duplicateStatus?: 'Pending review' | 'Linked' | 'No duplicate'
   qualification: Qualification

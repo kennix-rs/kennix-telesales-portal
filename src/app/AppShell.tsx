@@ -9,7 +9,7 @@ import { Avatar, Badge, Button } from '../components/ui'
 
 const primaryNav = [
   { to: '/home', label: 'Home', icon: Home }, { to: '/queue', label: 'My Queue', icon: ClipboardCheck },
-  { to: '/leads', label: 'Leads', icon: ContactRound }, { to: '/qualification', label: 'Qualification', icon: CircleHelp },
+  { to: '/leads', label: 'Leads', icon: ContactRound },   { to: '/qualification', label: 'Interested Leads', icon: CircleHelp },
   { to: '/follow-ups', label: 'Follow-ups', icon: Bell },
 ]
 
