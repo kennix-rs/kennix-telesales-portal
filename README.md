@@ -55,7 +55,8 @@ Executives see assigned journeys. Team Leads can access team workload, reassignm
 
 - Role-aware local authentication and responsive application shell
 - Home dashboard and prioritised queue with October/November 2026 data
-- 40 realistic Indian lead fixtures, table/pipeline views, sorting, search, and filters
+- 40 workflow-valid Indian lead stories covering New, Follow-up, Interested, Land Sourcing, Sent to Sales, and Dead outcomes
+- Fixture integrity tests for Telecaller ownership, dispositions, contact history, callbacks, qualification, Sales meetings, land status, duplicates, and customer identity
 - Permanent `KX-YYYY-NNNNNN` Journey IDs and round-robin lead creation
 - Complete lead workspace: overview, qualification, contact history, follow-ups, notes, documents, and audit activity
 - Duplicate review using normalized email/phone, including linking separate journeys to one customer

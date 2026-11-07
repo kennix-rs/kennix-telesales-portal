@@ -2,7 +2,7 @@ import { createInitialState, previewUsers } from '../data/fixtures'
 import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing } from '../lib/utils'
 import type { ContactAttempt, CrmState, FollowUp, Lead, LeadDisposition, LeadFilters, Qualification, User } from '../types'
 
-const STORAGE_KEY = 'kennix.crm.state.v1'
+const STORAGE_KEY = 'kennix.crm.state.v2'
 export const PREVIEW_PASSWORD = 'Preview@123'
 
 function clone<T>(value: T): T { return structuredClone(value) }

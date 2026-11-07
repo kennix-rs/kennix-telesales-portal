@@ -3,7 +3,7 @@ import { twMerge } from 'tailwind-merge'
 import type { Qualification, Role, Stage } from '../types'
 
 export const cn = (...inputs: ClassValue[]) => twMerge(clsx(inputs))
-export const REFERENCE_NOW = new Date('2026-11-01T11:00:00+05:30')
+export const REFERENCE_NOW = new Date('2026-11-07T18:00:00+05:30')
 
 export function formatINR(value: string) {
   return value.replace(/lakh/gi, 'L').replace(/crore/gi, 'Cr')

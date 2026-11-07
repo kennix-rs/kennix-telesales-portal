@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing } from '../lib/utils'
 import { hasPermission } from '../lib/permissions'
 import { crmService, PREVIEW_PASSWORD } from '../services/crmService'
+import { createInitialState } from '../data/fixtures'
 
 beforeEach(() => {
   localStorage.clear()
@@ -60,6 +61,77 @@ describe('role permissions', () => {
     expect(hasPermission('senior_executive', 'reports')).toBe(false)
     expect(hasPermission('team_lead', 'reports')).toBe(true)
     expect(hasPermission('crm_manager', 'configuration')).toBe(true)
+  })
+})
+
+describe('preview fixture integrity', () => {
+  const state = createInitialState()
+  const followUpDispositions = ['RNR', 'Call Back Later', 'Switch Off']
+
+  it('uses only Telecaller owners and preserves unique customer identities', () => {
+    expect(state.leads.every(lead => ['usr-priya', 'usr-arjun'].includes(lead.ownerId))).toBe(true)
+    expect(new Set(state.leads.map(lead => lead.customerId)).size).toBe(state.leads.length)
+    expect(state.customers).toHaveLength(state.leads.length)
+  })
+
+  it('aligns every lead bucket with its disposition and call history', () => {
+    for (const lead of state.leads) {
+      if (lead.stage === 'New') {
+        expect(lead.lastDisposition).toBeUndefined()
+        expect(lead.contacts).toHaveLength(0)
+      } else {
+        expect(lead.contacts.length).toBeGreaterThan(0)
+        expect(lead.contacts[0].disposition).toBe(lead.lastDisposition)
+      }
+      if (lead.stage === 'Attempted') expect(followUpDispositions).toContain(lead.lastDisposition)
+      if (lead.stage === 'Qualification' || lead.stage === 'Qualified') expect(lead.lastDisposition).toBe('Interested')
+      if (lead.stage === 'Lost') expect(lead.lastDisposition).toBe('Not Interested')
+    }
+  })
+
+  it('links every follow-up disposition to exactly one open next-call task', () => {
+    for (const lead of state.leads.filter(item => followUpDispositions.includes(item.lastDisposition ?? ''))) {
+      const open = state.followUps.filter(item => item.journeyId === lead.journeyId && item.status === 'Open')
+      expect(open).toHaveLength(1)
+      expect(lead.contacts[0].followUpId).toBe(open[0].id)
+      expect(open[0].dueAt).toBe(lead.nextActionAt)
+    }
+  })
+
+  it('keeps Interested and Sales records aligned with qualification and meeting rules', () => {
+    const meetingSlots = new Set<string>()
+    for (const lead of state.leads.filter(item => item.stage === 'Qualified')) {
+      expect(qualificationMissing(lead.qualification)).toEqual([])
+      expect(lead.qualification.salesMeetingDate).toBeTruthy()
+      expect(lead.qualification.salesMeetingTime).toBeTruthy()
+      expect(lead.handoffReference).toBe(`KX-SH-${lead.journeyId.slice(-6)}`)
+      meetingSlots.add(`${lead.qualification.salesMeetingDate} ${lead.qualification.salesMeetingTime}`)
+    }
+    const scheduledMeetings = state.leads.filter(lead => lead.qualification.salesMeetingDate)
+    expect(meetingSlots.size).toBe(state.leads.filter(lead => lead.stage === 'Qualified').length)
+    expect(new Set(scheduledMeetings.map(lead => `${lead.qualification.salesMeetingDate} ${lead.qualification.salesMeetingTime}`)).size).toBe(scheduledMeetings.length)
+  })
+
+  it('keeps Dead Leads closed with a Not Interested reason', () => {
+    for (const lead of state.leads.filter(item => item.stage === 'Lost')) {
+      expect(lead.lostReason).toBe('Not Interested')
+      expect(lead.nextAction).toBe('Dead lead')
+      expect(lead.nextActionAt).toBeUndefined()
+      expect(state.followUps.some(item => item.journeyId === lead.journeyId && item.status === 'Open')).toBe(false)
+    }
+  })
+
+  it('uses valid duplicate evidence and synchronized requirement summaries', () => {
+    for (const lead of state.leads) {
+      if (lead.duplicateOf) {
+        const original = state.leads.find(item => item.journeyId === lead.duplicateOf)
+        expect(original).toBeDefined()
+        expect(normalizeEmail(lead.email) === normalizeEmail(original!.email) || normalizePhone(lead.phone) === normalizePhone(original!.phone)).toBe(true)
+      }
+      if (lead.qualification.landStatus) expect(lead.landStatus).toBe(lead.qualification.landStatus)
+      if (lead.qualification.budget) expect(lead.budget).toBe(lead.qualification.budget)
+      if (lead.qualification.timeline) expect(lead.timeline).toBe(lead.qualification.timeline)
+    }
   })
 })
 
