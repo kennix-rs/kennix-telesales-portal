@@ -34,6 +34,24 @@ describe('journey identity and qualification rules', () => {
     })
     expect(missing).toEqual(expect.arrayContaining(['Group coordinator', 'Approximate families', 'Shared requirement', 'Combined budget', 'Common location']))
   })
+
+  it('does not require group fields for an individual requirement', () => {
+    const missing = qualificationMissing({
+      verifiedContact: true,
+      interestConfirmed: true,
+      customerType: 'Individual',
+      propertyRequirement: '3 BHK family home',
+      propertyType: 'Individual House (1 Floor / Villa)',
+      budget: '₹1–1.5 Cr',
+      size: '2,000–2,500 sq ft',
+      timeline: '1–3 months',
+      locations: [{ name: 'Mohali', pincode: '160055' }],
+      landStatus: 'Own Land',
+      source: 'Website',
+      consent: true,
+    })
+    expect(missing).not.toEqual(expect.arrayContaining(['Group coordinator', 'Approximate families', 'Shared requirement', 'Combined budget', 'Common location']))
+  })
 })
 
 describe('role permissions', () => {
@@ -61,6 +79,13 @@ describe('local CRM service', () => {
     expect(lead.duplicateOf).toBe('KX-2026-000241')
     expect(lead.ownerId).toMatch(/^usr-(priya|arjun)$/)
     expect((await crmService.getSnapshot()).leads.some(item => item.journeyId === lead.journeyId)).toBe(true)
+  })
+
+  it('saves qualification checklist items without completing the form', async () => {
+    await crmService.updateQualificationChecklist('KX-2026-000241', 'verifiedContact', false)
+    const lead = await crmService.getJourney('KX-2026-000241')
+    expect(lead?.qualification.verifiedContact).toBe(false)
+    expect(lead?.qualification.propertyType).toBe('Individual House (1 Floor / Villa)')
   })
 
   it('allows only Team Leads and CRM Managers to create leads', async () => {

@@ -105,6 +105,13 @@ export class LocalCrmService {
     lead.activities.unshift({ id: uid('ACT'), type: 'Qualification updated', description: 'Structured requirement draft saved.', actor: 'Current user', createdAt: now() })
     this.write(state)
   }
+  async updateQualificationChecklist(journeyId: string, field: 'verifiedContact'|'interestConfirmed'|'consent', checked: boolean) {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    lead.qualification[field] = checked
+    lead.activities.unshift({ id: uid('ACT'), type: 'Qualification checklist', description: `${field} ${checked ? 'confirmed' : 'cleared'}.`, actor: 'Current user', createdAt: now() })
+    this.write(state)
+  }
   async submitToLandSourcing(journeyId: string) {
     const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
     assertTelesalesEditable(lead)
