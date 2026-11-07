@@ -10,6 +10,7 @@ function now() { return new Date().toISOString() }
 function uid(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
 function assertTelesalesEditable(lead: Lead) {
   if (lead.stage === 'Qualified') throw new Error('This journey has been sent to Sales and is read-only in Telesales')
+  if (lead.landSourcingHandoff?.status === 'Submitted') throw new Error('This journey is with Land Sourcing and is read-only in Telesales')
 }
 
 export class LocalCrmService {
@@ -23,6 +24,13 @@ export class LocalCrmService {
     try {
       const state = JSON.parse(value) as CrmState
       state.leads.forEach(lead => {
+        const qualification = lead.qualification
+        qualification.propertyType ??= ''
+        qualification.size ??= ''
+        qualification.locations ??= (qualification.location ? qualification.location.split('/').map(name => ({ name: name.trim(), pincode: '' })) : [{ name: lead.city, pincode: '' }])
+        if (!['Below ₹1 Cr','₹1–1.5 Cr','₹1.5–2 Cr','₹2–3 Cr','₹3–4 Cr','₹4 Cr+'].includes(qualification.budget)) qualification.budget = qualification.budget.includes('crore') || qualification.budget.includes('Cr') ? '₹1–1.5 Cr' : 'Below ₹1 Cr'
+        if (!['Immediate','1–3 months','3–6 months','6+ months'].includes(qualification.timeline)) qualification.timeline = qualification.timeline.toLowerCase().includes('immediate') ? 'Immediate' : qualification.timeline.toLowerCase().includes('3 month') ? '1–3 months' : qualification.timeline.toLowerCase().includes('6 month') ? '3–6 months' : '6+ months'
+        if (!['Own Land','Need to Source Land'].includes(qualification.landStatus)) qualification.landStatus = qualification.landStatus.toLowerCase().includes('own') || qualification.landStatus.toLowerCase().includes('identified') || qualification.landStatus.toLowerCase().includes('family') ? 'Own Land' : 'Need to Source Land'
         if (lead.qualification.interestConfirmed === undefined) {
           lead.qualification.interestConfirmed = Boolean(lead.qualification.verifiedContact && lead.qualification.propertyRequirement)
         }
@@ -69,7 +77,7 @@ export class LocalCrmService {
     const lead: Lead = {
       ...input, journeyId, customerId, ownerId, stage: 'New', createdAt: now(), nextAction: 'Make first contact', nextActionAt: '2026-11-02T10:00:00+05:30',
       duplicateOf: duplicate?.journeyId, duplicateStatus: duplicate ? 'Pending review' : undefined,
-      qualification: { verifiedContact: false, interestConfirmed: false, customerType: input.type, propertyRequirement: input.requirement, budget: input.budget, timeline: input.timeline, location: input.city, landStatus: input.landStatus, source: input.source, consent: false },
+      qualification: { verifiedContact: false, interestConfirmed: false, customerType: input.type, propertyRequirement: input.requirement, propertyType: '', budget: '', size: '', timeline: '', locations: [{ name: input.city, pincode: '' }], landStatus: '', source: input.source, consent: false },
       contacts: [], notes: [], documents: [], activities: [
         { id: uid('ACT'), type: 'Lead created', description: `${input.source} lead captured and ${journeyId} created.`, actor: actor.name, createdAt: now() },
         { id: uid('ACT'), type: 'Assignment', description: `Assigned to ${previewUsers.find(user => user.id === ownerId)?.name} through round-robin.`, actor: 'System', createdAt: now() },
@@ -87,7 +95,42 @@ export class LocalCrmService {
   async saveQualification(journeyId: string, qualification: Qualification) {
     const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
     assertTelesalesEditable(lead)
-    lead.qualification = qualification; lead.stage = 'Qualification'; lead.activities.unshift({ id: uid('ACT'), type: 'Qualification updated', description: 'Qualification draft saved.', actor: 'Current user', createdAt: now() }); this.write(state)
+    lead.qualification = qualification
+    lead.requirement = qualification.propertyRequirement
+    lead.budget = qualification.budget
+    lead.timeline = qualification.timeline
+    lead.landStatus = qualification.landStatus
+    lead.city = qualification.locations.map(location => location.name).join(', ')
+    lead.stage = 'Qualification'
+    lead.activities.unshift({ id: uid('ACT'), type: 'Qualification updated', description: 'Structured requirement draft saved.', actor: 'Current user', createdAt: now() })
+    this.write(state)
+  }
+  async submitToLandSourcing(journeyId: string) {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    if (lead.qualification.landStatus !== 'Need to Source Land') throw new Error('Land Sourcing is only required when the customer needs land')
+    if (!lead.qualification.propertyType || !lead.qualification.locations.length || lead.qualification.locations.some(location => !location.name || !location.pincode)) throw new Error('Property type, locations, and pincodes are required for Land Sourcing')
+    lead.landSourcingHandoff = {
+      reference: `KX-LS-${journeyId.slice(-6)}`,
+      status: 'Submitted',
+      submittedAt: now(),
+      customerName: lead.name,
+      mobileNumber: lead.phone,
+      locations: clone(lead.qualification.locations),
+      propertyType: lead.qualification.propertyType,
+    }
+    lead.nextAction = 'Await Land Sourcing update'
+    lead.nextActionAt = undefined
+    lead.activities.unshift({ id: uid('ACT'), type: 'Land Sourcing handoff', description: `${lead.landSourcingHandoff.reference} submitted with customer name, mobile number, locations, and property type.`, actor: 'Current user', createdAt: now() })
+    this.write(state)
+  }
+  async markLandIdentified(journeyId: string) {
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead?.landSourcingHandoff) throw new Error('Land Sourcing handoff not found')
+    lead.landSourcingHandoff.status = 'Land Identified'
+    lead.landSourcingHandoff.completedAt = now()
+    lead.nextAction = 'Review qualification and send to Sales'
+    lead.activities.unshift({ id: uid('ACT'), type: 'Land identified', description: 'Land Sourcing completed. Journey returned to Telesales for Sales handoff.', actor: 'Land Sourcing', createdAt: now() })
+    this.write(state)
   }
   async logContactAttempt(journeyId: string, input: Omit<ContactAttempt, 'id'|'date'|'employee'|'followUpId'> & { employee: string; followUpAt?: string }) {
     const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
@@ -114,7 +157,10 @@ export class LocalCrmService {
   async changeStage(journeyId: string, action: 'nurture'|'lost'|'qualify', reason?: string) {
     const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
     assertTelesalesEditable(lead)
-    if (action === 'qualify') { lead.stage = 'Qualified'; lead.handoffReference = `KX-SH-${journeyId.slice(-6)}`; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined; lead.activities.unshift({ id: uid('ACT'), type: 'Sales handoff', description: `Qualified journey sent to Sales as ${lead.handoffReference}.`, actor: 'Current user', createdAt: now() }) }
+    if (action === 'qualify') {
+      if (lead.qualification.landStatus === 'Need to Source Land' && lead.landSourcingHandoff?.status !== 'Land Identified') throw new Error('Complete the Land Sourcing handoff before sending this journey to Sales')
+      lead.stage = 'Qualified'; lead.handoffReference = `KX-SH-${journeyId.slice(-6)}`; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined; lead.activities.unshift({ id: uid('ACT'), type: 'Sales handoff', description: `Qualified journey sent to Sales as ${lead.handoffReference}.`, actor: 'Current user', createdAt: now() })
+    }
     if (action === 'nurture') { lead.stage = 'Nurture'; lead.nurtureReason = reason; lead.nextAction = 'Nurture check-in'; lead.activities.unshift({ id: uid('ACT'), type: 'Moved to Nurture', description: reason || 'Journey placed in nurture.', actor: 'Current user', createdAt: now() }) }
     if (action === 'lost') { lead.stage = 'Lost'; lead.lostReason = reason; lead.nextAction = 'Journey closed'; lead.nextActionAt = undefined; lead.activities.unshift({ id: uid('ACT'), type: 'Marked Lost', description: reason || 'Journey closed.', actor: 'Current user', createdAt: now() }) }
     this.write(state)

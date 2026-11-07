@@ -23,10 +23,12 @@ describe('journey identity and qualification rules', () => {
       interestConfirmed: true,
       customerType: 'Group / Community',
       propertyRequirement: 'Low-rise housing community',
-      budget: '₹12 crore',
-      timeline: 'Within 6 months',
-      location: 'New Chandigarh',
-      landStatus: 'Land identified',
+      propertyType: 'Individual House (1 Floor / Villa)',
+      budget: '₹4 Cr+',
+      size: '3,500+ sq ft',
+      timeline: '3–6 months',
+      locations: [{ name: 'New Chandigarh', pincode: '140901' }],
+      landStatus: 'Own Land',
       source: 'Referral',
       consent: true,
     })
@@ -74,6 +76,26 @@ describe('local CRM service', () => {
     expect(lead?.stage).toBe('Qualified')
     expect(lead?.handoffReference).toBe('KX-SH-000241')
     expect(lead?.activities[0].type).toBe('Sales handoff')
+  })
+
+  it('routes land-dependent journeys to Land Sourcing before Sales', async () => {
+    const lead = await crmService.getJourney('KX-2026-000241')
+    await crmService.saveQualification('KX-2026-000241', {
+      ...lead!.qualification,
+      landStatus: 'Need to Source Land',
+    })
+    await crmService.submitToLandSourcing('KX-2026-000241')
+    const submitted = await crmService.getJourney('KX-2026-000241')
+    expect(submitted?.landSourcingHandoff).toMatchObject({
+      status: 'Submitted',
+      customerName: 'Rahul Sharma',
+      mobileNumber: '+91 98765 43210',
+      propertyType: 'Individual House (1 Floor / Villa)',
+    })
+    await expect(crmService.changeStage('KX-2026-000241', 'qualify')).rejects.toThrow('Land Sourcing')
+    await crmService.markLandIdentified('KX-2026-000241')
+    await crmService.changeStage('KX-2026-000241', 'qualify')
+    expect((await crmService.getJourney('KX-2026-000241'))?.stage).toBe('Qualified')
   })
 
   it('keeps sent-to-Sales journeys visible but read-only in Telesales', async () => {

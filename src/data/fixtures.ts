@@ -10,7 +10,11 @@ export const previewUsers: User[] = [
 const names = ['Rahul Sharma','Aditi Verma','Vikram Mehta','Neha Kapoor','Sandeep Gill','Ishita Bansal','Manpreet Kaur','Rohan Khanna','Meera Iyer','Amanpreet Singh','Sneha Joshi','Harish Chawla','Divya Arora','Nitin Bhatia','Simran Kaur','Aditya Rao','Pooja Malhotra','Kunal Sood','Ritu Sharma','Deepak Yadav','Tanya Goel','Gurpreet Singh','Nandini Arora','Varun Sehgal','Ananya Menon','Rajiv Khurana','Shreya Tandon','Mohit Jain','Preeti Saini','Arnav Chopra','Seema Reddy','Jayant Kumar','Kirti Ahuja','Abhishek Dutta','Rashmi Oberoi','Tarun Bedi','Sonia Paul','Lakshay Gupta','Madhuri Nair','Yash Malhotra']
 const cities = ['Mohali','New Chandigarh','Chandigarh','Zirakpur','Panchkula','Ludhiana','Kharar','Delhi NCR','Noida','Gurugram']
 const requirements = ['3 BHK independent residence','4 BHK premium villa','Duplex residence with home office','2 BHK retirement home','Farmhouse and weekend residence','Row housing community','Low-rise apartment cluster','3 BHK sustainable family home']
-const budgets = ['₹85–95 lakh','₹1.1–1.3 crore','₹65–75 lakh','₹1.4–1.7 crore','₹95 lakh–1.1 crore','₹2.0–2.4 crore']
+const budgets = ['Below ₹1 Cr','₹1–1.5 Cr','₹1.5–2 Cr','₹2–3 Cr','₹3–4 Cr','₹4 Cr+'] as const
+const sizes = ['1,000–1,500 sq ft','1,500–2,000 sq ft','2,000–2,500 sq ft','2,500–3,000 sq ft','3,000–3,500 sq ft','3,500+ sq ft'] as const
+const timelines = ['Immediate','1–3 months','3–6 months','6+ months'] as const
+const propertyTypes = ['Individual House (1 Floor / Villa)','Standalone Apartment','Commercial Building'] as const
+const pincodes = ['160055','140901','160017','140603','134109','141001','140301','110001','201301','122001']
 const stages: Stage[] = ['New','Attempted','Contacted','Qualification','Qualified','Nurture','Lost']
 const sources: Source[] = ['Website','Phone','Referral','Campaign','Walk-in','Partner']
 const priorities: Priority[] = ['High','Medium','Low']
@@ -48,8 +52,8 @@ function makeLead(index: number): Lead {
     createdAt,
     requirement: requirements[index % requirements.length],
     budget: budgets[index % budgets.length],
-    timeline: ['Start within 3 months','Within 6 months','Exploring for early 2027','Immediate consultation'][index % 4],
-    landStatus: ['Own land; verification required','Shortlisting plots','Family-owned land','Land identified; documents available'][index % 4],
+    timeline: timelines[index % timelines.length],
+    landStatus: index % 4 === 1 ? 'Need to Source Land' : 'Own Land',
     nextAction: stage === 'Qualified' ? 'Sales handoff completed' : stage === 'Lost' ? 'Journey closed' : stage === 'Nurture' ? 'Monthly nurture check-in' : 'Call and confirm requirement',
     nextActionAt: stage === 'Lost' ? undefined : dueAt,
     qualification: {
@@ -58,9 +62,11 @@ function makeLead(index: number): Lead {
       customerType: type,
       propertyRequirement: complete || index % 2 === 0 ? requirements[index % requirements.length] : '',
       budget: complete ? budgets[index % budgets.length] : index % 2 === 0 ? budgets[index % budgets.length] : '',
-      timeline: complete ? ['Start within 3 months','Within 6 months'][index % 2] : '',
-      location: complete ? cities[index % cities.length] : index % 2 === 0 ? cities[index % cities.length] : '',
-      landStatus: complete ? ['Own land; verification required','Shortlisting plots'][index % 2] : '',
+      size: complete ? sizes[index % sizes.length] : '',
+      timeline: complete ? timelines[index % timelines.length] : '',
+      propertyType: complete ? propertyTypes[index % propertyTypes.length] : '',
+      locations: complete || index % 2 === 0 ? [{ name: cities[index % cities.length], pincode: pincodes[index % pincodes.length] }] : [],
+      landStatus: complete ? (stage === 'Qualified' || index % 2 === 0 ? 'Own Land' : 'Need to Source Land') : '',
       source,
       consent: complete || index % 4 !== 1,
       ...(type === 'Group / Community' ? {
@@ -83,8 +89,8 @@ function makeLead(index: number): Lead {
   if (index === 0) {
     return {
       ...lead,
-      journeyId: 'KX-2026-000241', customerId: 'CUS-01081', name: 'Rahul Sharma', email: 'rahul.sharma@gmail.com', phone: '+91 98765 43210', city: 'Mohali', type: 'Individual', stage: 'Qualification', priority: 'High', source: 'Website', ownerId: 'usr-priya', createdAt: '2026-10-18T09:42:00+05:30', requirement: '3 BHK independent residence', budget: '₹85–95 lakh', timeline: 'Start within 3 months', landStatus: 'Own land; verification required', nextAction: 'Review qualification and send to Sales', nextActionAt: '2026-10-22T10:30:00+05:30',
-      qualification: { verifiedContact: true, interestConfirmed: true, customerType: 'Individual', propertyRequirement: '3 BHK independent residence', budget: '₹85–95 lakh', timeline: 'Start within 3 months', location: 'Mohali / New Chandigarh', landStatus: 'Own land; verification required', source: 'Website', consent: true },
+      journeyId: 'KX-2026-000241', customerId: 'CUS-01081', name: 'Rahul Sharma', email: 'rahul.sharma@gmail.com', phone: '+91 98765 43210', city: 'Mohali, New Chandigarh', type: 'Individual', stage: 'Qualification', priority: 'High', source: 'Website', ownerId: 'usr-priya', createdAt: '2026-10-18T09:42:00+05:30', requirement: '3 BHK independent residence', budget: '₹1–1.5 Cr', timeline: '1–3 months', landStatus: 'Own Land', nextAction: 'Review qualification and send to Sales', nextActionAt: '2026-10-22T10:30:00+05:30',
+      qualification: { verifiedContact: true, interestConfirmed: true, customerType: 'Individual', propertyRequirement: '3 BHK independent residence', propertyType: 'Individual House (1 Floor / Villa)', budget: '₹1–1.5 Cr', size: '2,000–2,500 sq ft', timeline: '1–3 months', locations: [{ name: 'Mohali', pincode: '160055' }, { name: 'New Chandigarh', pincode: '140901' }], landStatus: 'Own Land', source: 'Website', consent: true },
       contacts: [{ id: 'CA-241-1', direction: 'Outbound', date: '2026-10-19T11:05:00+05:30', duration: 412, disposition: 'Connected — requirements discussed', notes: 'Rahul owns a plot near New Chandigarh. Asked for a transparent design-to-build process and indicative timelines.', employee: 'Priya Singh', followUpId: 'FU-241' }],
       notes: [{ id: 'N-241-1', text: 'Spouse will join the next consultation. Share the land-document checklist after the call.', author: 'Priya Singh', createdAt: '2026-10-19T11:15:00+05:30', pinned: true }],
       documents: [{ id: 'DOC-241-1', name: 'Mohali plot location.pdf', category: 'Land reference', uploadedAt: '2026-10-19T12:10:00+05:30', visibility: 'Internal', status: 'Review pending' }],

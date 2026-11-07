@@ -4,6 +4,11 @@ export type Priority = 'High' | 'Medium' | 'Low'
 export type LeadType = 'Individual' | 'Group / Community'
 export type Source = 'Website' | 'Phone' | 'Referral' | 'Campaign' | 'Walk-in' | 'Partner'
 export type FollowUpStatus = 'Open' | 'Completed' | 'Rescheduled'
+export type BudgetRange = 'Below ₹1 Cr' | '₹1–1.5 Cr' | '₹1.5–2 Cr' | '₹2–3 Cr' | '₹3–4 Cr' | '₹4 Cr+'
+export type PropertySize = '1,000–1,500 sq ft' | '1,500–2,000 sq ft' | '2,000–2,500 sq ft' | '2,500–3,000 sq ft' | '3,000–3,500 sq ft' | '3,500+ sq ft'
+export type RequirementTimeline = 'Immediate' | '1–3 months' | '3–6 months' | '6+ months'
+export type PropertyType = 'Individual House (1 Floor / Villa)' | 'Standalone Apartment' | 'Commercial Building'
+export type LandStatus = 'Own Land' | 'Need to Source Land'
 
 export interface User {
   id: string
@@ -21,10 +26,13 @@ export interface Qualification {
   interestConfirmed: boolean
   customerType: LeadType | ''
   propertyRequirement: string
-  budget: string
-  timeline: string
-  location: string
-  landStatus: string
+  budget: BudgetRange | ''
+  size: PropertySize | ''
+  timeline: RequirementTimeline | ''
+  propertyType: PropertyType | ''
+  locations: RequirementLocation[]
+  location?: string
+  landStatus: LandStatus | ''
   source: Source | ''
   consent: boolean
   coordinator?: string
@@ -32,6 +40,22 @@ export interface Qualification {
   sharedRequirement?: string
   combinedBudget?: string
   commonLocation?: string
+}
+
+export interface RequirementLocation {
+  name: string
+  pincode: string
+}
+
+export interface LandSourcingHandoff {
+  reference: string
+  status: 'Submitted' | 'Land Identified'
+  submittedAt: string
+  completedAt?: string
+  customerName: string
+  mobileNumber: string
+  locations: RequirementLocation[]
+  propertyType: PropertyType
 }
 
 export interface ContactAttempt {
@@ -112,6 +136,7 @@ export interface Lead {
   lostReason?: string
   nurtureReason?: string
   handoffReference?: string
+  landSourcingHandoff?: LandSourcingHandoff
 }
 
 export interface Customer {

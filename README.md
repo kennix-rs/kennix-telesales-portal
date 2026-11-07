@@ -59,6 +59,9 @@ Executives see assigned journeys. Team Leads can access team workload, reassignm
 - Contact disposition logging with automatic callback/no-answer follow-ups
 - Agenda/calendar follow-ups with completion and rescheduling
 - Mandatory individual and group/community qualification gates
+- Structured requirements for multiple pincode-linked locations, budget, size, timeline, property type, and land status
+- Sequential land-dependent workflow: Telesales → Land Sourcing → Sales
+- Land Sourcing receives only customer name, mobile number, locations/pincodes, and property type
 - Nurture, Lost, and qualified Sales handoff workflows
 - Lead search includes customer name, Journey ID, email, phone, and location.
 - Customer identity remains an internal data relationship for duplicate detection and multiple journeys; it is not a separate Telesales module.
