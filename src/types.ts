@@ -85,6 +85,23 @@ export interface FollowUp {
   history: string[]
 }
 
+export type FeedbackTeam = 'Telesales' | 'Sales' | 'Land Sourcing'
+
+/** One entry in the running call feedback / comment thread of a journey. */
+export interface FeedbackComment {
+  id: string
+  text: string
+  author: string
+  team: FeedbackTeam
+  createdAt: string
+  /** Set when the entry was captured while logging a call. */
+  disposition?: LeadDisposition
+  contactId?: string
+}
+
+/** Queue the journey lands in on the Sales side after Telesales hands it off. */
+export type SalesQueue = 'New Leads' | 'New Lead for Land Sourcing'
+
 export interface Note {
   id: string
   text: string
@@ -134,12 +151,14 @@ export interface Lead {
   duplicateStatus?: 'Pending review' | 'Linked' | 'No duplicate'
   qualification: Qualification
   contacts: ContactAttempt[]
+  feedback: FeedbackComment[]
   notes: Note[]
   documents: DocumentRecord[]
   activities: Activity[]
   lostReason?: string
   nurtureReason?: string
   handoffReference?: string
+  salesQueue?: SalesQueue
   landSourcingHandoff?: LandSourcingHandoff
 }
 
