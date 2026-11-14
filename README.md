@@ -65,7 +65,8 @@ Executives see assigned journeys. Team Leads can access team workload, reassignm
 - Agenda/calendar follow-ups with completion and rescheduling
 - Mandatory individual and group/community qualification gates
 - Structured requirements for multiple pincode-linked locations, budget, size, timeline, property type, and land status
-- Sequential land-dependent workflow: Telesales → Land Sourcing → Sales
+- Land-dependent workflow: one action sends the journey to Land Sourcing and to Sales ("New Lead for Land Sourcing" queue) together; Sales coordinates with Land Sourcing
+- Call feedback & comments thread under the qualification form: every call's notes plus free comments, kept in order with date and time
 - Land Sourcing receives only customer name, mobile number, locations/pincodes, and property type
 - Mandatory Sales meeting date and time before an Interested lead can move to Sales
 - Lead search includes customer name, Journey ID, email, phone, and location.

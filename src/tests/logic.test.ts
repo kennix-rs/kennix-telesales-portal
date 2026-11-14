@@ -112,6 +112,27 @@ describe('preview fixture integrity', () => {
     expect(new Set(scheduledMeetings.map(lead => `${lead.qualification.salesMeetingDate} ${lead.qualification.salesMeetingTime}`)).size).toBe(scheduledMeetings.length)
   })
 
+  it('routes land-dependent Sales handoffs to both Land Sourcing and the land queue', () => {
+    const sent = state.leads.filter(lead => lead.stage === 'Qualified')
+    expect(sent.some(lead => lead.salesQueue === 'New Lead for Land Sourcing')).toBe(true)
+    for (const lead of sent) {
+      const needsLand = lead.qualification.landStatus === 'Need to Source Land'
+      expect(lead.salesQueue).toBe(needsLand ? 'New Lead for Land Sourcing' : 'New Leads')
+      if (needsLand) expect(lead.landSourcingHandoff?.reference).toBe(`KX-LS-${lead.journeyId.slice(-6)}`)
+      else expect(lead.landSourcingHandoff).toBeUndefined()
+    }
+    for (const lead of state.leads.filter(item => item.stage !== 'Qualified')) expect(lead.landSourcingHandoff).toBeUndefined()
+  })
+
+  it('starts every called journey with its call notes in the feedback thread', () => {
+    for (const lead of state.leads) {
+      expect(lead.feedback.length).toBeGreaterThanOrEqual(lead.contacts.length)
+      for (const contact of lead.contacts) expect(lead.feedback).toContainEqual(expect.objectContaining({ contactId: contact.id, text: contact.notes, disposition: contact.disposition }))
+      const times = lead.feedback.map(item => item.createdAt)
+      expect([...times].sort()).toEqual(times)
+    }
+  })
+
   it('keeps Dead Leads closed with a Not Interested reason', () => {
     for (const lead of state.leads.filter(item => item.stage === 'Lost')) {
       expect(lead.lostReason).toBe('Not Interested')
@@ -151,6 +172,12 @@ describe('local CRM service', () => {
     expect(lead.duplicateOf).toBe('KX-2026-000241')
     expect(lead.ownerId).toMatch(/^usr-(priya|arjun)$/)
     expect((await crmService.getSnapshot()).leads.some(item => item.journeyId === lead.journeyId)).toBe(true)
+  })
+
+  it('keeps unanswered budget, timeline, and land status empty when saved state is reloaded', async () => {
+    await crmService.getSnapshot()
+    const reloaded = (await crmService.getSnapshot()).leads.find(item => item.journeyId === 'KX-2026-000244')!
+    expect(reloaded.qualification).toMatchObject({ budget: '', timeline: '', landStatus: '' })
   })
 
   it('saves qualification checklist items without completing the form', async () => {
@@ -215,24 +242,69 @@ describe('local CRM service', () => {
     expect(lead?.activities[0].type).toBe('Sales handoff')
   })
 
-  it('routes land-dependent journeys to Land Sourcing before Sales', async () => {
+  it('sends own-land journeys to the Sales New Leads queue only', async () => {
+    await crmService.changeStage('KX-2026-000241', 'qualify')
+    const lead = await crmService.getJourney('KX-2026-000241')
+    expect(lead?.salesQueue).toBe('New Leads')
+    expect(lead?.landSourcingHandoff).toBeUndefined()
+  })
+
+  it('sends land-dependent journeys to Land Sourcing and Sales together', async () => {
     const lead = await crmService.getJourney('KX-2026-000241')
     await crmService.saveQualification('KX-2026-000241', {
       ...lead!.qualification,
       landStatus: 'Need to Source Land',
     })
-    await crmService.submitToLandSourcing('KX-2026-000241')
-    const submitted = await crmService.getJourney('KX-2026-000241')
-    expect(submitted?.landSourcingHandoff).toMatchObject({
+    await crmService.changeStage('KX-2026-000241', 'qualify')
+    const sent = await crmService.getJourney('KX-2026-000241')
+    expect(sent).toMatchObject({ stage: 'Qualified', handoffReference: 'KX-SH-000241', salesQueue: 'New Lead for Land Sourcing' })
+    expect(sent?.landSourcingHandoff).toMatchObject({
+      reference: 'KX-LS-000241',
       status: 'Submitted',
       customerName: 'Rahul Sharma',
       mobileNumber: '+91 98765 43210',
+      locations: [{ name: 'Mohali', pincode: '160055' }],
       propertyType: 'Individual House (1 Floor / Villa)',
     })
-    await expect(crmService.changeStage('KX-2026-000241', 'qualify')).rejects.toThrow('Land Sourcing')
+    expect(sent?.activities.slice(0, 2).map(item => item.type)).toEqual(['Sales handoff', 'Land Sourcing handoff'])
+
     await crmService.markLandIdentified('KX-2026-000241')
+    const identified = await crmService.getJourney('KX-2026-000241')
+    expect(identified).toMatchObject({ stage: 'Qualified', salesQueue: 'New Lead for Land Sourcing', landSourcingHandoff: { status: 'Land Identified' } })
+  })
+
+  it('still requires the Sales meeting for land-dependent journeys', async () => {
+    const lead = await crmService.getJourney('KX-2026-000241')
+    await crmService.saveQualification('KX-2026-000241', { ...lead!.qualification, landStatus: 'Need to Source Land', salesMeetingDate: '' })
+    await expect(crmService.changeStage('KX-2026-000241', 'qualify')).rejects.toThrow('Sales meeting date and time')
+    expect((await crmService.getJourney('KX-2026-000241'))?.landSourcingHandoff).toBeUndefined()
+  })
+
+  it('captures call notes in the feedback thread with the disposition and time', async () => {
+    const before = (await crmService.getJourney('KX-2026-000242'))!.feedback.length
+    await crmService.logContactAttempt('KX-2026-000242', {
+      direction: 'Outbound', duration: 30, disposition: 'Call Back Later', notes: 'Customer is travelling; call back on Monday.', employee: 'Arjun Nair', followUpAt: '2026-11-10T11:00',
+    })
+    const lead = await crmService.getJourney('KX-2026-000242')
+    expect(lead!.feedback).toHaveLength(before + 1)
+    const entry = lead!.feedback.at(-1)!
+    expect(entry).toMatchObject({ text: 'Customer is travelling; call back on Monday.', author: 'Arjun Nair', team: 'Telesales', disposition: 'Call Back Later', contactId: lead!.contacts[0].id })
+    expect(Number.isNaN(Date.parse(entry.createdAt))).toBe(false)
+  })
+
+  it('appends comments to the feedback thread in the order they are added', async () => {
+    await crmService.addFeedback('KX-2026-000241', 'First comment after the call.', 'Priya Singh')
+    await crmService.addFeedback('KX-2026-000241', 'Second comment: customer prefers evening calls.', 'Priya Singh')
+    const thread = (await crmService.getJourney('KX-2026-000241'))!.feedback
+    expect(thread.slice(-2).map(item => item.text)).toEqual(['First comment after the call.', 'Second comment: customer prefers evening calls.'])
+    expect(thread.slice(-1)[0]).toMatchObject({ author: 'Priya Singh', team: 'Telesales' })
+    expect(thread.slice(-2)[0].createdAt <= thread.slice(-1)[0].createdAt).toBe(true)
+    await expect(crmService.addFeedback('KX-2026-000241', '  ', 'Priya Singh')).rejects.toThrow('Enter the call feedback')
+  })
+
+  it('keeps the feedback thread read-only once the journey is with Sales', async () => {
     await crmService.changeStage('KX-2026-000241', 'qualify')
-    expect((await crmService.getJourney('KX-2026-000241'))?.stage).toBe('Qualified')
+    await expect(crmService.addFeedback('KX-2026-000241', 'Late comment from Telesales', 'Priya Singh')).rejects.toThrow('read-only in Telesales')
   })
 
   it('keeps sent-to-Sales journeys visible but read-only in Telesales', async () => {

@@ -1,8 +1,9 @@
 import { createInitialState, previewUsers } from '../data/fixtures'
 import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing } from '../lib/utils'
-import type { ContactAttempt, CrmState, FollowUp, Lead, LeadDisposition, LeadFilters, Qualification, User } from '../types'
+import type { ContactAttempt, CrmState, FeedbackTeam, FollowUp, Lead, LeadDisposition, LeadFilters, PropertyType, Qualification, User } from '../types'
 
-const STORAGE_KEY = 'kennix.crm.state.v2'
+// v3: call feedback thread + combined Land Sourcing / Sales handoff. Older saved state is reseeded.
+const STORAGE_KEY = 'kennix.crm.state.v3'
 export const PREVIEW_PASSWORD = 'Preview@123'
 
 function clone<T>(value: T): T { return structuredClone(value) }
@@ -29,9 +30,10 @@ export class LocalCrmService {
         qualification.propertyType ??= ''
         qualification.size ??= ''
         qualification.locations ??= (qualification.location ? qualification.location.split('/').map(name => ({ name: name.trim(), pincode: '' })) : [{ name: lead.city, pincode: '' }])
-        if (!['Below ₹1 Cr','₹1–1.5 Cr','₹1.5–2 Cr','₹2–3 Cr','₹3–4 Cr','₹4 Cr+'].includes(qualification.budget)) qualification.budget = qualification.budget.includes('crore') || qualification.budget.includes('Cr') ? '₹1–1.5 Cr' : 'Below ₹1 Cr'
-        if (!['Immediate','1–3 months','3–6 months','6+ months'].includes(qualification.timeline)) qualification.timeline = qualification.timeline.toLowerCase().includes('immediate') ? 'Immediate' : qualification.timeline.toLowerCase().includes('3 month') ? '1–3 months' : qualification.timeline.toLowerCase().includes('6 month') ? '3–6 months' : '6+ months'
-        if (!['Own Land','Need to Source Land'].includes(qualification.landStatus)) qualification.landStatus = qualification.landStatus.toLowerCase().includes('own') || qualification.landStatus.toLowerCase().includes('identified') || qualification.landStatus.toLowerCase().includes('family') ? 'Own Land' : 'Need to Source Land'
+        // Only map legacy free-text values; an empty answer must stay empty (not yet captured).
+        if (qualification.budget && !['Below ₹1 Cr','₹1–1.5 Cr','₹1.5–2 Cr','₹2–3 Cr','₹3–4 Cr','₹4 Cr+'].includes(qualification.budget)) qualification.budget = qualification.budget.includes('crore') || qualification.budget.includes('Cr') ? '₹1–1.5 Cr' : 'Below ₹1 Cr'
+        if (qualification.timeline && !['Immediate','1–3 months','3–6 months','6+ months'].includes(qualification.timeline)) qualification.timeline = qualification.timeline.toLowerCase().includes('immediate') ? 'Immediate' : qualification.timeline.toLowerCase().includes('3 month') ? '1–3 months' : qualification.timeline.toLowerCase().includes('6 month') ? '3–6 months' : '6+ months'
+        if (qualification.landStatus && !['Own Land','Need to Source Land'].includes(qualification.landStatus)) qualification.landStatus = qualification.landStatus.toLowerCase().includes('own') || qualification.landStatus.toLowerCase().includes('identified') || qualification.landStatus.toLowerCase().includes('family') ? 'Own Land' : 'Need to Source Land'
         if (lead.qualification.interestConfirmed === undefined) {
           lead.qualification.interestConfirmed = Boolean(lead.qualification.verifiedContact && lead.qualification.propertyRequirement)
         }
@@ -43,6 +45,7 @@ export class LocalCrmService {
           Nurture: 'Interested',
           Lost: 'Not Interested',
         } as Partial<Record<Lead['stage'], LeadDisposition>>)[lead.stage]
+        lead.feedback ??= []
         qualification.salesMeetingDate ??= ''
         qualification.salesMeetingTime ??= ''
         if (lead.stage === 'Contacted' && qualificationMissing(lead.qualification).length === 0) {
@@ -89,7 +92,7 @@ export class LocalCrmService {
       ...input, journeyId, customerId, ownerId, stage: 'New', createdAt: now(), nextAction: 'Make first contact', nextActionAt: '2026-11-02T10:00:00+05:30',
       duplicateOf: duplicate?.journeyId, duplicateStatus: duplicate ? 'Pending review' : undefined,
       qualification: { verifiedContact: false, interestConfirmed: false, customerType: input.type, propertyRequirement: input.requirement, propertyType: '', budget: '', size: '', timeline: '', locations: [{ name: input.city, pincode: '' }], landStatus: '', source: input.source, consent: false },
-      contacts: [], notes: [], documents: [], activities: [
+      contacts: [], feedback: [], notes: [], documents: [], activities: [
         { id: uid('ACT'), type: 'Lead created', description: `${input.source} lead captured and ${journeyId} created.`, actor: actor.name, createdAt: now() },
         { id: uid('ACT'), type: 'Assignment', description: `Assigned to ${previewUsers.find(user => user.id === ownerId)?.name} through round-robin.`, actor: 'System', createdAt: now() },
       ],
@@ -123,31 +126,22 @@ export class LocalCrmService {
     lead.activities.unshift({ id: uid('ACT'), type: 'Qualification checklist', description: `${field} ${checked ? 'confirmed' : 'cleared'}.`, actor: 'Current user', createdAt: now() })
     this.write(state)
   }
-  async submitToLandSourcing(journeyId: string) {
-    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
-    assertTelesalesEditable(lead)
-    if (lead.qualification.landStatus !== 'Need to Source Land') throw new Error('Land Sourcing is only required when the customer needs land')
-    if (!lead.qualification.propertyType || !lead.qualification.locations.length || lead.qualification.locations.some(location => !location.name || !location.pincode)) throw new Error('Property type, locations, and pincodes are required for Land Sourcing')
-    lead.landSourcingHandoff = {
-      reference: `KX-LS-${journeyId.slice(-6)}`,
-      status: 'Submitted',
-      submittedAt: now(),
-      customerName: lead.name,
-      mobileNumber: lead.phone,
-      locations: clone(lead.qualification.locations),
-      propertyType: lead.qualification.propertyType,
-    }
-    lead.nextAction = 'Await Land Sourcing update'
-    lead.nextActionAt = undefined
-    lead.activities.unshift({ id: uid('ACT'), type: 'Land Sourcing handoff', description: `${lead.landSourcingHandoff.reference} submitted with customer name, mobile number, locations, and property type.`, actor: 'Current user', createdAt: now() })
-    this.write(state)
-  }
+  /** Land Sourcing reports back. The journey is already with Sales, which coordinates with Land Sourcing. */
   async markLandIdentified(journeyId: string) {
     const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead?.landSourcingHandoff) throw new Error('Land Sourcing handoff not found')
     lead.landSourcingHandoff.status = 'Land Identified'
     lead.landSourcingHandoff.completedAt = now()
-    lead.nextAction = 'Review qualification and send to Sales'
-    lead.activities.unshift({ id: uid('ACT'), type: 'Land identified', description: 'Land Sourcing completed. Journey returned to Telesales for Sales handoff.', actor: 'Land Sourcing', createdAt: now() })
+    lead.activities.unshift({ id: uid('ACT'), type: 'Land identified', description: 'Land Sourcing identified land and updated the Sales team.', actor: 'Land Sourcing', createdAt: now() })
+    this.write(state)
+  }
+  async addFeedback(journeyId: string, text: string, author: string, team: FeedbackTeam = 'Telesales') {
+    const value = text.trim()
+    if (value.length < 3) throw new Error('Enter the call feedback or comment')
+    const state = this.read(); const lead = state.leads.find(item => item.journeyId === journeyId); if (!lead) throw new Error('Journey not found')
+    assertTelesalesEditable(lead)
+    const createdAt = now()
+    lead.feedback.push({ id: uid('FB'), text: value, author, team, createdAt })
+    lead.activities.unshift({ id: uid('ACT'), type: 'Feedback added', description: 'Call feedback / comment added to the journey thread.', actor: author, createdAt })
     this.write(state)
   }
   async logContactAttempt(journeyId: string, input: Omit<ContactAttempt, 'id'|'date'|'employee'|'followUpId'> & { employee: string; followUpAt?: string }) {
@@ -179,7 +173,10 @@ export class LocalCrmService {
       lead.nextAction = 'Dead lead'
       lead.nextActionAt = undefined
     }
-    lead.contacts.unshift({ id: uid('CA'), date: now(), followUpId, ...input })
+    const contactId = uid('CA'); const loggedAt = now()
+    lead.contacts.unshift({ id: contactId, date: loggedAt, followUpId, ...input })
+    // Every call's notes also continue the journey's feedback thread.
+    lead.feedback.push({ id: uid('FB'), text: input.notes, author: input.employee, team: 'Telesales', createdAt: loggedAt, disposition: input.disposition, contactId })
     lead.lastDisposition = input.disposition
     lead.activities.unshift({ id: uid('ACT'), type: 'Contact attempt', description: `${input.direction} contact logged: ${input.disposition}.`, actor: input.employee, createdAt: now() }); this.write(state)
   }
@@ -201,8 +198,14 @@ export class LocalCrmService {
       if (lead.lastDisposition !== 'Interested') throw new Error('Only an Interested lead can be moved to Sales')
       if (qualificationMissing(lead.qualification).length) throw new Error('Complete the qualification before sending this journey to Sales')
       if (!lead.qualification.salesMeetingDate || !lead.qualification.salesMeetingTime) throw new Error('Sales meeting date and time are required before handoff')
-      if (lead.qualification.landStatus === 'Need to Source Land' && lead.landSourcingHandoff?.status !== 'Land Identified') throw new Error('Complete the Land Sourcing handoff before sending this journey to Sales')
-      lead.stage = 'Qualified'; lead.handoffReference = `KX-SH-${journeyId.slice(-6)}`; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined; lead.activities.unshift({ id: uid('ACT'), type: 'Sales handoff', description: `Qualified journey sent to Sales as ${lead.handoffReference}.`, actor: 'Current user', createdAt: now() })
+      const needsLand = lead.qualification.landStatus === 'Need to Source Land'
+      lead.stage = 'Qualified'; lead.handoffReference = `KX-SH-${journeyId.slice(-6)}`; lead.salesQueue = needsLand ? 'New Lead for Land Sourcing' : 'New Leads'; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined
+      if (needsLand) {
+        // Land-dependent journeys go to Land Sourcing and Sales at the same time; Sales coordinates with Land Sourcing.
+        lead.landSourcingHandoff = { reference: `KX-LS-${journeyId.slice(-6)}`, status: 'Submitted', submittedAt: now(), customerName: lead.name, mobileNumber: lead.phone, locations: clone(lead.qualification.locations), propertyType: lead.qualification.propertyType as PropertyType }
+        lead.activities.unshift({ id: uid('ACT'), type: 'Land Sourcing handoff', description: `${lead.landSourcingHandoff.reference} sent to Land Sourcing with customer name, mobile number, locations, and property type.`, actor: 'Current user', createdAt: now() })
+      }
+      lead.activities.unshift({ id: uid('ACT'), type: 'Sales handoff', description: `Qualified journey sent to Sales as ${lead.handoffReference} under ${lead.salesQueue}.`, actor: 'Current user', createdAt: now() })
     }
     if (action === 'nurture') { lead.stage = 'Nurture'; lead.nurtureReason = reason; lead.nextAction = 'Nurture check-in'; lead.activities.unshift({ id: uid('ACT'), type: 'Moved to Nurture', description: reason || 'Journey placed in nurture.', actor: 'Current user', createdAt: now() }) }
     if (action === 'lost') { lead.stage = 'Lost'; lead.lostReason = reason; lead.nextAction = 'Journey closed'; lead.nextActionAt = undefined; lead.activities.unshift({ id: uid('ACT'), type: 'Marked Lost', description: reason || 'Journey closed.', actor: 'Current user', createdAt: now() }) }

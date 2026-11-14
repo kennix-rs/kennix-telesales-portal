@@ -1,4 +1,4 @@
-import type { Activity, CrmState, FollowUp, LandSourcingHandoff, Lead, LeadDisposition, Priority, PropertyType, Source, User } from '../types'
+import type { Activity, CrmState, FeedbackComment, FollowUp, LandSourcingHandoff, Lead, LeadDisposition, Priority, PropertyType, Source, User } from '../types'
 
 export const previewUsers: User[] = [
   { id: 'usr-priya', name: 'Priya Singh', email: 'priya.singh@kennix.in', role: 'executive', title: 'Telesales Executive', team: 'North Growth', initials: 'PS', managerId: 'usr-kavya' },
@@ -14,19 +14,19 @@ type FixturePlan =
   | 'followup-switch-off'
   | 'interested-incomplete'
   | 'interested-ready'
-  | 'interested-land-submitted'
   | 'interested-land-ready'
   | 'sales'
+  | 'sales-land'
   | 'dead'
 
 const plans: FixturePlan[] = [
   'interested-ready', 'new', 'followup-rnr', 'interested-incomplete', 'sales',
-  'dead', 'followup-callback', 'interested-land-submitted', 'new', 'interested-ready',
+  'dead', 'followup-callback', 'sales-land', 'new', 'interested-ready',
   'sales', 'dead', 'followup-switch-off', 'interested-incomplete', 'new',
   'interested-land-ready', 'sales', 'followup-rnr', 'dead', 'interested-incomplete',
   'new', 'followup-callback', 'interested-ready', 'sales', 'dead',
   'new', 'interested-incomplete', 'followup-switch-off', 'interested-ready', 'sales',
-  'new', 'interested-land-submitted', 'followup-rnr', 'dead', 'interested-incomplete',
+  'new', 'sales-land', 'followup-rnr', 'dead', 'interested-incomplete',
   'new', 'followup-callback', 'interested-ready', 'new', 'followup-switch-off',
 ]
 
@@ -80,16 +80,16 @@ function dispositionFor(plan: FixturePlan): LeadDisposition | undefined {
   if (plan === 'followup-callback') return 'Call Back Later'
   if (plan === 'followup-switch-off') return 'Switch Off'
   if (plan === 'dead') return 'Not Interested'
-  if (plan.startsWith('interested') || plan === 'sales') return 'Interested'
+  if (plan.startsWith('interested') || plan.startsWith('sales')) return 'Interested'
   return undefined
 }
 
 function isQualificationComplete(plan: FixturePlan) {
-  return ['interested-ready', 'interested-land-submitted', 'interested-land-ready', 'sales'].includes(plan)
+  return ['interested-ready', 'interested-land-ready', 'sales', 'sales-land'].includes(plan)
 }
 
 function isLandSourcingPlan(plan: FixturePlan, index: number) {
-  return plan === 'interested-land-submitted' || plan === 'interested-land-ready' || (plan === 'sales' && index === 16)
+  return plan === 'sales-land' || plan === 'interested-land-ready' || (plan === 'sales' && index === 16)
 }
 
 function makeLead(index: number): Lead {
@@ -114,19 +114,18 @@ function makeLead(index: number): Lead {
   const customerId = `CUS-${String(1081 + index).padStart(5, '0')}`
   const followUpId = `FU-${String(serial).padStart(6, '0')}-1`
   const nextDueAt = dateAt(20 + (index % 7), 9 + (index % 8), index % 2 ? 30 : 0)
-  const meetingOrdinal = plans.slice(0, index + 1).filter(item => item === 'interested-ready' || item === 'interested-land-ready' || item === 'sales').length - 1
-  const salesMeetingDate = complete && plan !== 'interested-land-submitted' ? localDate(22 + meetingOrdinal) : ''
-  const salesMeetingTime = complete && plan !== 'interested-land-submitted' ? `${String(10 + (meetingOrdinal % 7)).padStart(2, '0')}:${meetingOrdinal % 2 ? '30' : '00'}` : ''
-  const stage = plan === 'new' ? 'New' as const : plan.startsWith('followup') ? 'Attempted' as const : plan === 'sales' ? 'Qualified' as const : plan === 'dead' ? 'Lost' as const : 'Qualification' as const
+  const meetingOrdinal = plans.slice(0, index + 1).filter(item => item === 'interested-ready' || item === 'interested-land-ready' || item === 'sales' || item === 'sales-land').length - 1
+  const salesMeetingDate = complete ? localDate(22 + meetingOrdinal) : ''
+  const salesMeetingTime = complete ? `${String(10 + (meetingOrdinal % 7)).padStart(2, '0')}:${meetingOrdinal % 2 ? '30' : '00'}` : ''
+  const stage = plan === 'new' ? 'New' as const : plan.startsWith('followup') ? 'Attempted' as const : plan === 'sales' || plan === 'sales-land' ? 'Qualified' as const : plan === 'dead' ? 'Lost' as const : 'Qualification' as const
   const landStatus = needsLand ? 'Need to Source Land' as const : 'Own Land' as const
   const followUpTitle = disposition === 'RNR' ? 'Retry RNR lead' : disposition === 'Switch Off' ? 'Retry switched-off number' : 'Customer callback'
   const nextAction = plan === 'new' ? 'Make first contact'
     : plan.startsWith('followup') ? followUpTitle
       : plan === 'interested-incomplete' ? 'Complete customer requirements'
-        : plan === 'interested-land-submitted' ? 'Await Land Sourcing update'
-          : plan === 'interested-land-ready' ? 'Confirm Sales meeting and transfer'
-            : plan === 'interested-ready' ? 'Review and move to Sales Team'
-              : plan === 'sales' ? 'Sales handoff completed'
+        : plan === 'interested-land-ready' ? 'Send to Land Sourcing and Sales'
+          : plan === 'interested-ready' ? 'Review and move to Sales Team'
+            : plan === 'sales' || plan === 'sales-land' ? 'Sales handoff completed'
                 : 'Dead lead'
 
   const qualification = {
@@ -169,14 +168,26 @@ function makeLead(index: number): Lead {
     ...(plan.startsWith('followup') ? { followUpId } : {}),
   }] : []
 
+  const feedback: FeedbackComment[] = contacts.map(contact => ({
+    id: `FB-${serial}-1`, text: contact.notes, author: owner, team: 'Telesales', createdAt: contact.date, disposition: contact.disposition, contactId: contact.id,
+  }))
+  if (complete) feedback.push({
+    id: `FB-${serial}-2`,
+    text: needsLand
+      ? `Customer needs land in ${city} before construction. Shared budget and size; asked for plot options near the preferred pincode.`
+      : `Customer owns land in ${city}. Requirement, budget, and timeline confirmed; customer agreed to the Sales meeting.`,
+    author: owner, team: 'Telesales', createdAt: dateAt((index % 18) + 2, 13, 10),
+  })
+
   let landSourcingHandoff: LandSourcingHandoff | undefined
-  if (plan === 'interested-land-submitted' || plan === 'interested-land-ready' || (plan === 'sales' && needsLand)) {
-    const identified = plan === 'interested-land-ready' || plan === 'sales'
+  const sentToSales = plan === 'sales' || plan === 'sales-land'
+  if (sentToSales && needsLand) {
+    const identified = plan === 'sales'
     landSourcingHandoff = {
       reference: `KX-LS-${String(serial).padStart(6, '0')}`,
       status: identified ? 'Land Identified' : 'Submitted',
-      submittedAt: dateAt((index % 18) + 3, 11),
-      ...(identified ? { completedAt: dateAt((index % 18) + 5, 15) } : {}),
+      submittedAt: dateAt((index % 18) + 6, 16),
+      ...(identified ? { completedAt: dateAt((index % 18) + 9, 15) } : {}),
       customerName: name,
       mobileNumber: phone,
       locations: qualification.locations,
@@ -192,8 +203,8 @@ function makeLead(index: number): Lead {
   if (disposition === 'Interested') activities.unshift(activity(`A-${serial}-4`, 'Interested lead', 'Customer moved to Interested Leads for structured requirement capture.', owner, contactAt))
   if (complete) activities.unshift(activity(`A-${serial}-5`, 'Qualification updated', 'Required customer and property details were captured.', owner, dateAt((index % 18) + 2, 14)))
   if (landSourcingHandoff) activities.unshift(activity(`A-${serial}-6`, 'Land Sourcing handoff', `${landSourcingHandoff.reference} submitted to Land Sourcing.`, owner, landSourcingHandoff.submittedAt))
-  if (landSourcingHandoff?.status === 'Land Identified') activities.unshift(activity(`A-${serial}-7`, 'Land identified', 'Land Sourcing completed and returned the journey for Sales transfer.', 'Land Sourcing', landSourcingHandoff.completedAt!))
-  if (plan === 'sales') activities.unshift(activity(`A-${serial}-8`, 'Sales handoff', `${journeyId} moved to Sales with meeting ${salesMeetingDate} at ${salesMeetingTime}.`, owner, dateAt((index % 18) + 6, 16)))
+  if (landSourcingHandoff?.status === 'Land Identified') activities.unshift(activity(`A-${serial}-7`, 'Land identified', 'Land Sourcing identified land and updated the Sales team.', 'Land Sourcing', landSourcingHandoff.completedAt!))
+  if (sentToSales) activities.unshift(activity(`A-${serial}-8`, 'Sales handoff', `${journeyId} moved to Sales under ${needsLand ? 'New Lead for Land Sourcing' : 'New Leads'} with meeting ${salesMeetingDate} at ${salesMeetingTime}.`, owner, dateAt((index % 18) + 6, 16)))
   if (plan === 'dead') activities.unshift(activity(`A-${serial}-4`, 'Dead Lead', 'Journey closed after the customer selected Not Interested.', owner, contactAt))
 
   return {
@@ -219,6 +230,7 @@ function makeLead(index: number): Lead {
     ...(duplicate ? { duplicateOf: 'KX-2026-000241', duplicateStatus: 'Pending review' as const } : {}),
     qualification,
     contacts,
+    feedback,
     notes: disposition ? [{
       id: `N-${serial}-1`,
       text: disposition === 'Interested' ? 'Keep the requirement summary and meeting commitment current before Sales transfer.' : contactNotes,
@@ -236,7 +248,7 @@ function makeLead(index: number): Lead {
     }] : [],
     activities,
     ...(plan === 'dead' ? { lostReason: 'Not Interested' } : {}),
-    ...(plan === 'sales' ? { handoffReference: `KX-SH-${String(serial).padStart(6, '0')}` } : {}),
+    ...(sentToSales ? { handoffReference: `KX-SH-${String(serial).padStart(6, '0')}`, salesQueue: needsLand ? 'New Lead for Land Sourcing' as const : 'New Leads' as const } : {}),
     ...(landSourcingHandoff ? { landSourcingHandoff } : {}),
   }
 }
