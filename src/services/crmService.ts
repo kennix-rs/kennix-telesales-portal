@@ -1,9 +1,9 @@
 import { createInitialState, previewUsers } from '../data/fixtures'
-import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing } from '../lib/utils'
+import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing, teamReference } from '../lib/utils'
 import type { ContactAttempt, CrmState, FeedbackTeam, FollowUp, Lead, LeadDisposition, LeadFilters, PropertyType, Qualification, User } from '../types'
 
 // v3: call feedback thread + combined Land Sourcing / Sales handoff. Older saved state is reseeded.
-const STORAGE_KEY = 'kennix.crm.state.v3'
+const STORAGE_KEY = 'kennix.crm.state.v4'
 export const PREVIEW_PASSWORD = 'Preview@123'
 
 function clone<T>(value: T): T { return structuredClone(value) }
@@ -199,10 +199,10 @@ export class LocalCrmService {
       if (qualificationMissing(lead.qualification).length) throw new Error('Complete the qualification before sending this journey to Sales')
       if (!lead.qualification.salesMeetingDate || !lead.qualification.salesMeetingTime) throw new Error('Sales meeting date and time are required before handoff')
       const needsLand = lead.qualification.landStatus === 'Need to Source Land'
-      lead.stage = 'Qualified'; lead.handoffReference = `KX-SH-${journeyId.slice(-6)}`; lead.salesQueue = needsLand ? 'New Lead for Land Sourcing' : 'New Leads'; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined
+      lead.stage = 'Qualified'; lead.handoffReference = teamReference('SH', journeyId); lead.salesQueue = needsLand ? 'New Lead for Land Sourcing' : 'New Leads'; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined
       if (needsLand) {
         // Land-dependent journeys go to Land Sourcing and Sales at the same time; Sales coordinates with Land Sourcing.
-        lead.landSourcingHandoff = { reference: `KX-LS-${journeyId.slice(-6)}`, status: 'Submitted', submittedAt: now(), customerName: lead.name, mobileNumber: lead.phone, locations: clone(lead.qualification.locations), propertyType: lead.qualification.propertyType as PropertyType }
+        lead.landSourcingHandoff = { reference: teamReference('LS', journeyId), status: 'Submitted', submittedAt: now(), customerName: lead.name, mobileNumber: lead.phone, locations: clone(lead.qualification.locations), propertyType: lead.qualification.propertyType as PropertyType }
         lead.activities.unshift({ id: uid('ACT'), type: 'Land Sourcing handoff', description: `${lead.landSourcingHandoff.reference} sent to Land Sourcing with customer name, mobile number, locations, and property type.`, actor: 'Current user', createdAt: now() })
       }
       lead.activities.unshift({ id: uid('ACT'), type: 'Sales handoff', description: `Qualified journey sent to Sales as ${lead.handoffReference} under ${lead.salesQueue}.`, actor: 'Current user', createdAt: now() })

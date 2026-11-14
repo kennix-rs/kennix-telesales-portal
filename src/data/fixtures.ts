@@ -1,3 +1,4 @@
+import { teamReference } from '../lib/utils'
 import type { Activity, CrmState, FeedbackComment, FollowUp, LandSourcingHandoff, Lead, LeadDisposition, Priority, PropertyType, Source, User } from '../types'
 
 export const previewUsers: User[] = [
@@ -184,7 +185,7 @@ function makeLead(index: number): Lead {
   if (sentToSales && needsLand) {
     const identified = plan === 'sales'
     landSourcingHandoff = {
-      reference: `KX-LS-${String(serial).padStart(6, '0')}`,
+      reference: teamReference('LS', journeyId),
       status: identified ? 'Land Identified' : 'Submitted',
       submittedAt: dateAt((index % 18) + 6, 16),
       ...(identified ? { completedAt: dateAt((index % 18) + 9, 15) } : {}),
@@ -248,7 +249,7 @@ function makeLead(index: number): Lead {
     }] : [],
     activities,
     ...(plan === 'dead' ? { lostReason: 'Not Interested' } : {}),
-    ...(sentToSales ? { handoffReference: `KX-SH-${String(serial).padStart(6, '0')}`, salesQueue: needsLand ? 'New Lead for Land Sourcing' as const : 'New Leads' as const } : {}),
+    ...(sentToSales ? { handoffReference: teamReference('SH', journeyId), salesQueue: needsLand ? 'New Lead for Land Sourcing' as const : 'New Leads' as const } : {}),
     ...(landSourcingHandoff ? { landSourcingHandoff } : {}),
   }
 }

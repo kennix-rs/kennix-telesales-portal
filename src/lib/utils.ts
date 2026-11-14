@@ -54,6 +54,8 @@ export function stageTone(stage: Stage) {
 
 export function normalizePhone(value: string) { return value.replace(/\D/g, '').slice(-10) }
 export function normalizeEmail(value: string) { return value.trim().toLowerCase() }
+/** Team reference for a journey: the journey ID with the team code inserted, e.g. KX-2026-000241 → KX-LS-2026-000241. */
+export function teamReference(teamCode: 'LS' | 'SH', journeyId: string) { return journeyId.replace(/^KX-/, `KX-${teamCode}-`) }
 export function generateJourneyId(leads: { journeyId: string }[]) {
   const max = leads.reduce((value, lead) => Math.max(value, Number(lead.journeyId.split('-')[2]) || 0), 0)
   return `KX-2026-${String(max + 1).padStart(6, '0')}`
