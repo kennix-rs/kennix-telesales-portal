@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing } from '../lib/utils'
+import { generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing, teamReference } from '../lib/utils'
 import { hasPermission } from '../lib/permissions'
 import { crmService, PREVIEW_PASSWORD } from '../services/crmService'
 import { createInitialState } from '../data/fixtures'
@@ -104,7 +104,7 @@ describe('preview fixture integrity', () => {
       expect(qualificationMissing(lead.qualification)).toEqual([])
       expect(lead.qualification.salesMeetingDate).toBeTruthy()
       expect(lead.qualification.salesMeetingTime).toBeTruthy()
-      expect(lead.handoffReference).toBe(`KX-SH-${lead.journeyId.slice(-6)}`)
+      expect(lead.handoffReference).toBe(lead.journeyId.replace('KX-', 'KX-SH-'))
       meetingSlots.add(`${lead.qualification.salesMeetingDate} ${lead.qualification.salesMeetingTime}`)
     }
     const scheduledMeetings = state.leads.filter(lead => lead.qualification.salesMeetingDate)
@@ -118,7 +118,7 @@ describe('preview fixture integrity', () => {
     for (const lead of sent) {
       const needsLand = lead.qualification.landStatus === 'Need to Source Land'
       expect(lead.salesQueue).toBe(needsLand ? 'New Lead for Land Sourcing' : 'New Leads')
-      if (needsLand) expect(lead.landSourcingHandoff?.reference).toBe(`KX-LS-${lead.journeyId.slice(-6)}`)
+      if (needsLand) expect(lead.landSourcingHandoff?.reference).toBe(lead.journeyId.replace('KX-', 'KX-LS-'))
       else expect(lead.landSourcingHandoff).toBeUndefined()
     }
     for (const lead of state.leads.filter(item => item.stage !== 'Qualified')) expect(lead.landSourcingHandoff).toBeUndefined()
@@ -234,11 +234,17 @@ describe('local CRM service', () => {
     await expect(crmService.changeStage('KX-2026-000241', 'qualify')).rejects.toThrow('Sales meeting date and time')
   })
 
+  it('builds team references from the full journey ID so years never collide', () => {
+    expect(teamReference('LS', 'KX-2026-000241')).toBe('KX-LS-2026-000241')
+    expect(teamReference('SH', 'KX-2027-000241')).toBe('KX-SH-2027-000241')
+    expect(teamReference('LS', 'KX-2026-000241')).not.toBe(teamReference('LS', 'KX-2027-000241'))
+  })
+
   it('records a visible Sales handoff while retaining the Journey ID', async () => {
     await crmService.changeStage('KX-2026-000241', 'qualify')
     const lead = await crmService.getJourney('KX-2026-000241')
     expect(lead?.stage).toBe('Qualified')
-    expect(lead?.handoffReference).toBe('KX-SH-000241')
+    expect(lead?.handoffReference).toBe('KX-SH-2026-000241')
     expect(lead?.activities[0].type).toBe('Sales handoff')
   })
 
@@ -257,9 +263,9 @@ describe('local CRM service', () => {
     })
     await crmService.changeStage('KX-2026-000241', 'qualify')
     const sent = await crmService.getJourney('KX-2026-000241')
-    expect(sent).toMatchObject({ stage: 'Qualified', handoffReference: 'KX-SH-000241', salesQueue: 'New Lead for Land Sourcing' })
+    expect(sent).toMatchObject({ stage: 'Qualified', handoffReference: 'KX-SH-2026-000241', salesQueue: 'New Lead for Land Sourcing' })
     expect(sent?.landSourcingHandoff).toMatchObject({
-      reference: 'KX-LS-000241',
+      reference: 'KX-LS-2026-000241',
       status: 'Submitted',
       customerName: 'Rahul Sharma',
       mobileNumber: '+91 98765 43210',
