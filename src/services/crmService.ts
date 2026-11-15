@@ -4,7 +4,7 @@ import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualifica
 import type { ContactAttempt, CrmState, FeedbackTeam, FollowUp, Lead, LeadDisposition, LeadFilters, PropertyType, Qualification, User } from '../types'
 
 // v3: call feedback thread + combined Land Sourcing / Sales handoff. Older saved state is reseeded.
-const STORAGE_KEY = 'kennix.crm.state.v4'
+const STORAGE_KEY = 'kennix.crm.state.v5'
 export const PREVIEW_PASSWORD = 'Preview@123'
 
 function clone<T>(value: T): T { return structuredClone(value) }
