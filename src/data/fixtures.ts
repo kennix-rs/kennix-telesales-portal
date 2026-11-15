@@ -20,16 +20,20 @@ type FixturePlan =
   | 'sales-land'
   | 'dead'
 
+// The 'sales-land' journeys (plus index 16) are the ones the Land Sourcing portal's demo works on.
 const plans: FixturePlan[] = [
-  'interested-ready', 'new', 'followup-rnr', 'interested-incomplete', 'sales',
-  'dead', 'followup-callback', 'sales-land', 'new', 'interested-ready',
+  'interested-ready', 'new', 'followup-rnr', 'sales-land', 'sales',
+  'dead', 'followup-callback', 'sales-land', 'new', 'sales-land',
   'sales', 'dead', 'followup-switch-off', 'interested-incomplete', 'new',
-  'interested-land-ready', 'sales', 'followup-rnr', 'dead', 'interested-incomplete',
-  'new', 'followup-callback', 'interested-ready', 'sales', 'dead',
-  'new', 'interested-incomplete', 'followup-switch-off', 'interested-ready', 'sales',
+  'sales-land', 'sales', 'followup-rnr', 'dead', 'sales-land',
+  'new', 'followup-callback', 'interested-ready', 'sales-land', 'dead',
+  'sales-land', 'interested-incomplete', 'followup-switch-off', 'interested-land-ready', 'sales',
   'new', 'sales-land', 'followup-rnr', 'dead', 'interested-incomplete',
-  'new', 'followup-callback', 'interested-ready', 'new', 'followup-switch-off',
+  'new', 'followup-callback', 'sales-land', 'new', 'followup-switch-off',
 ]
+
+/** Land Sourcing has reported land for these journeys (they match the Land Sourcing demo). */
+const landIdentifiedIndexes = new Set([16, 19, 25])
 
 const people = [
   ['Rahul Sharma', 'Mohali'], ['Aditi Verma', 'New Chandigarh'], ['Vikram Mehta', 'Chandigarh'], ['Neha Kapoor', 'Zirakpur'],
@@ -183,7 +187,7 @@ function makeLead(index: number): Lead {
   let landSourcingHandoff: LandSourcingHandoff | undefined
   const sentToSales = plan === 'sales' || plan === 'sales-land'
   if (sentToSales && needsLand) {
-    const identified = plan === 'sales'
+    const identified = landIdentifiedIndexes.has(index)
     landSourcingHandoff = {
       reference: teamReference('LS', journeyId),
       status: identified ? 'Land Identified' : 'Submitted',

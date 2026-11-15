@@ -124,6 +124,17 @@ describe('preview fixture integrity', () => {
     for (const lead of state.leads.filter(item => item.stage !== 'Qualified')) expect(lead.landSourcingHandoff).toBeUndefined()
   })
 
+  it('sends the journeys the Land Sourcing demo works on, with matching statuses', () => {
+    const handedOff = state.leads.filter(lead => lead.landSourcingHandoff)
+    expect(handedOff.map(lead => lead.journeyId).sort()).toEqual([
+      'KX-2026-000244', 'KX-2026-000248', 'KX-2026-000250', 'KX-2026-000256', 'KX-2026-000257',
+      'KX-2026-000260', 'KX-2026-000264', 'KX-2026-000266', 'KX-2026-000272', 'KX-2026-000278',
+    ])
+    expect(handedOff.filter(lead => lead.landSourcingHandoff?.status === 'Land Identified').map(lead => lead.journeyId).sort())
+      .toEqual(['KX-2026-000257', 'KX-2026-000260', 'KX-2026-000266'])
+    expect(state.leads.find(lead => lead.journeyId === 'KX-2026-000269')).toMatchObject({ stage: 'Qualification', landStatus: 'Need to Source Land' })
+  })
+
   it('starts every called journey with its call notes in the feedback thread', () => {
     for (const lead of state.leads) {
       expect(lead.feedback.length).toBeGreaterThanOrEqual(lead.contacts.length)
@@ -176,7 +187,7 @@ describe('local CRM service', () => {
 
   it('keeps unanswered budget, timeline, and land status empty when saved state is reloaded', async () => {
     await crmService.getSnapshot()
-    const reloaded = (await crmService.getSnapshot()).leads.find(item => item.journeyId === 'KX-2026-000244')!
+    const reloaded = (await crmService.getSnapshot()).leads.find(item => item.journeyId === 'KX-2026-000254')!
     expect(reloaded.qualification).toMatchObject({ budget: '', timeline: '', landStatus: '' })
   })
 
