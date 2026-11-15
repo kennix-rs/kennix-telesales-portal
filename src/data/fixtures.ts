@@ -1,4 +1,4 @@
-import { teamReference } from '../lib/utils'
+import { maskMobile, stateFor, teamReference } from '../lib/utils'
 import type { Activity, CrmState, FeedbackComment, FollowUp, LandSourcingHandoff, Lead, LeadDisposition, Priority, PropertyType, Source, User } from '../types'
 
 export const previewUsers: User[] = [
@@ -194,9 +194,13 @@ function makeLead(index: number): Lead {
       submittedAt: dateAt((index % 18) + 6, 16),
       ...(identified ? { completedAt: dateAt((index % 18) + 9, 15) } : {}),
       customerName: name,
-      mobileNumber: phone,
+      maskedMobile: maskMobile(phone),
       locations: qualification.locations,
       propertyType: requirement.propertyType,
+      size: qualification.size as LandSourcingHandoff['size'],
+      budget: qualification.budget as LandSourcingHandoff['budget'],
+      city,
+      state: stateFor(city),
     }
   }
 
@@ -276,8 +280,46 @@ function createFollowUp(lead: Lead, index: number): FollowUp | null {
   }
 }
 
+/**
+ * Anita Rawat (KX-2026-000233): sent to Sales in October and sent back before her meeting, as in the
+ * Sales demo ("Sales Rejected"). Built from an own-land "sent to Sales" story, moved to her details and
+ * to October, with its own record IDs.
+ */
+function makeSalesRejectedLead(): Lead {
+  const base = makeLead(4)
+  const shift = new Date('2026-10-20T10:00:00+05:30').getTime() - new Date(base.createdAt).getTime()
+  const move = (value: string) => new Date(new Date(value).getTime() + shift).toISOString()
+  const swap = (text: string) => text.replaceAll(base.name, 'Anita Rawat').replaceAll(base.city, 'Zirakpur').replaceAll(base.journeyId, 'KX-2026-000233')
+  const renumber = <T extends { id: string }>(items: T[]) => items.map((item, index) => ({ ...item, id: `SR-${item.id.split('-')[0]}-${index + 1}` }))
+  const rejectedAt = '2026-10-27T12:30:00.000Z'
+  const reason = 'Bought a ready-built house elsewhere before the meeting; not interested any more.'
+  return {
+    ...base,
+    journeyId: 'KX-2026-000233', customerId: 'CUS-01073', name: 'Anita Rawat', email: 'anita.rawat@example.com', phone: '+91 9876500233', city: 'Zirakpur',
+    createdAt: move(base.createdAt), stage: 'Sales Rejected', budget: '₹1–1.5 Cr', timeline: '1–3 months',
+    requirement: '1,500–2,000 sq ft independent house on own plot', nextAction: 'Returned by Sales', nextActionAt: undefined,
+    handoffReference: 'KX-SH-2026-000233', salesQueue: 'New Leads', landSourcingHandoff: undefined, duplicateOf: undefined, duplicateStatus: undefined,
+    qualification: {
+      ...base.qualification, budget: '₹1–1.5 Cr', size: '1,500–2,000 sq ft', timeline: '1–3 months',
+      locations: [{ name: 'Zirakpur', pincode: '140603' }], location: 'Zirakpur', salesMeetingDate: '2026-10-28', salesMeetingTime: '12:00',
+    },
+    contacts: base.contacts.map(item => ({ ...item, id: `SR-${item.id}`, date: move(item.date), notes: swap(item.notes), followUpId: undefined })),
+    feedback: [
+      ...renumber(base.feedback.map(item => ({ ...item, createdAt: move(item.createdAt), text: swap(item.text), contactId: item.contactId ? `SR-${item.contactId}` : undefined }))),
+      { id: 'SR-FB-sales', text: reason, author: 'Tanvi Arora', team: 'Sales', createdAt: rejectedAt },
+    ],
+    notes: renumber(base.notes.map(item => ({ ...item, createdAt: move(item.createdAt), text: swap(item.text) }))),
+    documents: renumber(base.documents.map(item => ({ ...item, uploadedAt: move(item.uploadedAt) }))),
+    activities: [
+      { id: 'SR-A-sales', type: 'Sales rejected', description: `Sales sent the journey back: ${reason}`, actor: 'Tanvi Arora', createdAt: rejectedAt },
+      ...renumber(base.activities.map(item => ({ ...item, createdAt: move(item.createdAt), description: swap(item.description) }))),
+    ],
+    salesRejection: { at: rejectedAt, by: 'Tanvi Arora', reason, attempts: 0 },
+  }
+}
+
 export function createInitialState(): CrmState {
-  const leads = plans.map((_, index) => makeLead(index))
+  const leads = [...plans.map((_, index) => makeLead(index)), makeSalesRejectedLead()]
   const followUps = leads.map(createFollowUp).filter((item): item is FollowUp => Boolean(item))
   const customers = leads.map(lead => ({
     id: lead.customerId,

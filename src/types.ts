@@ -1,5 +1,6 @@
 export type Role = 'executive' | 'senior_executive' | 'team_lead' | 'crm_manager'
-export type Stage = 'New' | 'Attempted' | 'Contacted' | 'Qualification' | 'Qualified' | 'Nurture' | 'Lost'
+/** 'Sales Rejected': Sales sent the journey back (5 unanswered attempts in 3 days, or not interested before any meeting). */
+export type Stage = 'New' | 'Attempted' | 'Contacted' | 'Qualification' | 'Qualified' | 'Nurture' | 'Lost' | 'Sales Rejected'
 export type Priority = 'High' | 'Medium' | 'Low'
 export type LeadType = 'Individual' | 'Group / Community'
 export type Source = 'Website' | 'Phone' | 'Referral' | 'Campaign' | 'Walk-in' | 'Partner'
@@ -56,9 +57,14 @@ export interface LandSourcingHandoff {
   submittedAt: string
   completedAt?: string
   customerName: string
-  mobileNumber: string
+  /** Never the full number (DOMAIN.md §7, gap 7): e.g. +91 98XXX XX737. */
+  maskedMobile: string
   locations: RequirementLocation[]
   propertyType: PropertyType
+  size: PropertySize
+  budget: BudgetRange
+  city: string
+  state: string
 }
 
 export interface ContactAttempt {
@@ -156,6 +162,8 @@ export interface Lead {
   documents: DocumentRecord[]
   activities: Activity[]
   lostReason?: string
+  /** Set when Sales sends the journey back to Telesales (DOMAIN.md §7, gap 10). */
+  salesRejection?: { at: string; by: string; reason: string; attempts: number }
   nurtureReason?: string
   handoffReference?: string
   salesQueue?: SalesQueue

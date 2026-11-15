@@ -9,6 +9,7 @@ const stageLabel: Record<Stage, string> = {
   Qualified: 'Sent to Sales',
   Nurture: 'Interested',
   Lost: 'Dead',
+  'Sales Rejected': 'Sales rejected',
 }
 export function StageBadge({ stage }: { stage: Stage }) { return <Badge tone={stageTone(stage)}>{stageLabel[stage]}</Badge> }
 export function PriorityBadge({ priority }: { priority: Priority }) { return <Badge tone={priority === 'High' ? 'red' : priority === 'Medium' ? 'amber' : 'slate'}>{priority}</Badge> }

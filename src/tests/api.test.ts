@@ -15,8 +15,9 @@ const apiLead = {
   duplicateOf: null, lostReason: null, handoffReference: 'KX-SH-2026-000248',
   landSourcingHandoff: {
     reference: 'KX-LS-2026-000248', status: e('submitted', 'Submitted'), submittedAt: '2026-10-31T10:30:00Z',
-    completedAt: null, customerName: 'Rohan Khanna', mobileNumber: '+91 98100 22048',
+    completedAt: null, customerName: 'Rohan Khanna', maskedMobile: '+91 98XXX XX048',
     locations: [{ name: 'Delhi NCR', pincode: '110001' }], propertyType: e('individual_house', 'Individual House (1 Floor / Villa)'),
+    size: e('1500_2000', '1,500–2,000 sq ft'), budget: e('1_1_5cr', '₹1–1.5 Cr'), city: 'Delhi NCR', state: 'Delhi',
   },
   qualification: {
     verifiedContact: true, interestConfirmed: true, consent: true, customerType: e('individual', 'Individual'),
@@ -90,7 +91,7 @@ describe('ApiCrmService', () => {
     expect(lead).toMatchObject({
       stage: 'Qualified', type: 'Individual', priority: 'Low', source: 'Phone', ownerId: 'u-arjun',
       lastDisposition: 'Interested', salesQueue: 'New Lead for Land Sourcing', handoffReference: 'KX-SH-2026-000248',
-      landSourcingHandoff: { reference: 'KX-LS-2026-000248', status: 'Submitted', propertyType: 'Individual House (1 Floor / Villa)' },
+      landSourcingHandoff: { reference: 'KX-LS-2026-000248', status: 'Submitted', propertyType: 'Individual House (1 Floor / Villa)', maskedMobile: '+91 98XXX XX048', size: '1,500–2,000 sq ft', budget: '₹1–1.5 Cr', state: 'Delhi' },
     })
     expect(lead.qualification).toMatchObject({ budget: '₹1–1.5 Cr', size: '', landStatus: 'Need to Source Land', salesMeetingTime: '11:30' })
     expect(lead.contacts[0]).toMatchObject({ direction: 'Outbound', disposition: 'Interested' })

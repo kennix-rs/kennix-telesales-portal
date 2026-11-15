@@ -1,10 +1,10 @@
 import { createInitialState, previewUsers } from '../data/fixtures'
 import { ApiCrmService } from './apiCrmService'
-import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing, teamReference } from '../lib/utils'
-import type { ContactAttempt, CrmState, FeedbackTeam, FollowUp, Lead, LeadDisposition, LeadFilters, PropertyType, Qualification, User } from '../types'
+import { canManage, generateJourneyId, maskMobile, normalizeEmail, normalizePhone, qualificationMissing, stateFor, teamReference } from '../lib/utils'
+import type { BudgetRange, ContactAttempt, CrmState, FeedbackTeam, FollowUp, Lead, LeadDisposition, LeadFilters, PropertySize, PropertyType, Qualification, User } from '../types'
 
 // v3: call feedback thread + combined Land Sourcing / Sales handoff. Older saved state is reseeded.
-const STORAGE_KEY = 'kennix.crm.state.v5'
+const STORAGE_KEY = 'kennix.crm.state.v7'
 export const PREVIEW_PASSWORD = 'Preview@123'
 
 function clone<T>(value: T): T { return structuredClone(value) }
@@ -13,6 +13,7 @@ function uid(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().t
 function assertTelesalesEditable(lead: Lead) {
   if (lead.stage === 'Qualified') throw new Error('This journey has been sent to Sales and is read-only in Telesales')
   if (lead.stage === 'Lost') throw new Error('This journey is a Dead Lead and is read-only in Telesales')
+  if (lead.stage === 'Sales Rejected') throw new Error('Sales sent this journey back; it is read-only in Telesales')
   if (lead.landSourcingHandoff?.status === 'Submitted') throw new Error('This journey is with Land Sourcing and is read-only in Telesales')
 }
 
@@ -203,8 +204,9 @@ export class LocalCrmService {
       lead.stage = 'Qualified'; lead.handoffReference = teamReference('SH', journeyId); lead.salesQueue = needsLand ? 'New Lead for Land Sourcing' : 'New Leads'; lead.nextAction = 'Sales handoff completed'; lead.nextActionAt = undefined
       if (needsLand) {
         // Land-dependent journeys go to Land Sourcing and Sales at the same time; Sales coordinates with Land Sourcing.
-        lead.landSourcingHandoff = { reference: teamReference('LS', journeyId), status: 'Submitted', submittedAt: now(), customerName: lead.name, mobileNumber: lead.phone, locations: clone(lead.qualification.locations), propertyType: lead.qualification.propertyType as PropertyType }
-        lead.activities.unshift({ id: uid('ACT'), type: 'Land Sourcing handoff', description: `${lead.landSourcingHandoff.reference} sent to Land Sourcing with customer name, mobile number, locations, and property type.`, actor: 'Current user', createdAt: now() })
+        // Land Sourcing never gets the customer's phone number, only a masked one (DOMAIN.md §7, gap 7).
+        lead.landSourcingHandoff = { reference: teamReference('LS', journeyId), status: 'Submitted', submittedAt: now(), customerName: lead.name, maskedMobile: maskMobile(lead.phone), locations: clone(lead.qualification.locations), propertyType: lead.qualification.propertyType as PropertyType, size: lead.qualification.size as PropertySize, budget: lead.qualification.budget as BudgetRange, city: lead.city, state: stateFor(lead.city) }
+        lead.activities.unshift({ id: uid('ACT'), type: 'Land Sourcing handoff', description: `${lead.landSourcingHandoff.reference} sent to Land Sourcing with customer name, masked mobile, locations, property type, size, budget, city and state.`, actor: 'Current user', createdAt: now() })
       }
       lead.activities.unshift({ id: uid('ACT'), type: 'Sales handoff', description: `Qualified journey sent to Sales as ${lead.handoffReference} under ${lead.salesQueue}.`, actor: 'Current user', createdAt: now() })
     }
