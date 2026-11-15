@@ -1,4 +1,5 @@
 import { createInitialState, previewUsers } from '../data/fixtures'
+import { ApiCrmService } from './apiCrmService'
 import { canManage, generateJourneyId, normalizeEmail, normalizePhone, qualificationMissing, teamReference } from '../lib/utils'
 import type { ContactAttempt, CrmState, FeedbackTeam, FollowUp, Lead, LeadDisposition, LeadFilters, PropertyType, Qualification, User } from '../types'
 
@@ -229,7 +230,14 @@ export class LocalCrmService {
     assertTelesalesEditable(lead)
     lead.notes.unshift({ id: uid('N'), text, author, createdAt: now(), pinned }); lead.activities.unshift({ id: uid('ACT'), type: 'Note added', description: pinned ? 'Pinned internal note added.' : 'Internal note added.', actor: author, createdAt: now() }); this.write(state)
   }
+  async logout() { /* preview sessions have nothing to revoke */ }
   reset() { localStorage.removeItem(STORAGE_KEY) }
 }
 
-export const crmService = new LocalCrmService()
+/** The public methods every data service implements (local mock or API). */
+export type CrmService = { [K in keyof LocalCrmService]: LocalCrmService[K] }
+
+/** `VITE_DATA_MODE=api` uses the KENNIX backend; anything else keeps the local preview data. */
+export const DATA_MODE: 'local' | 'api' = import.meta.env.VITE_DATA_MODE === 'api' ? 'api' : 'local'
+
+export const crmService: CrmService = DATA_MODE === 'api' ? new ApiCrmService() : new LocalCrmService()

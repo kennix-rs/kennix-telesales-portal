@@ -98,3 +98,23 @@ npm run build
 ## No-API limitation
 
 This is a review-ready mock UI. All users, leads, customers, audit events, reports, and mutations exist only in the current browser. Clearing browser storage resets the application. Authentication is for preview purposes and is not suitable for production security. Future API adapters can replace `LocalCrmService` without coupling screens to fixture arrays.
+
+## Running against the KENNIX backend
+
+By default the portal uses its built-in preview data (saved in `localStorage`). To use the real API
+from [`kennix-rs/kennix-backend`](https://github.com/kennix-rs/kennix-backend) instead:
+
+1. Start the backend (`docker compose up -d db redis`, `uv run python manage.py migrate`,
+   `uv run python manage.py seed_demo`, `uv run python manage.py runserver`).
+2. Create `.env.local` here with `VITE_DATA_MODE=api` (see `.env.example`), then `npm run dev`.
+
+The same preview accounts and password work, because `seed_demo` loads this portal's own demo data.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VITE_DATA_MODE` | `local` | `api` switches every screen to the backend |
+| `VITE_API_URL` | `http://localhost:8000/api/v1` | Backend base URL |
+| `VITE_PREVIEW_LOGINS` | shown | `false` hides the preview accounts on the sign-in page |
+
+`src/services/apiCrmService.ts` implements the same methods as `LocalCrmService`, so screens don't
+change. Sessions use JWTs (15-minute access token, refreshed automatically; signing out revokes it).

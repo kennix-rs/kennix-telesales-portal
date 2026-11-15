@@ -21,7 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!account) return false
       localStorage.setItem(AUTH_KEY, JSON.stringify(account)); setUser(account); return true
     },
-    logout: () => { localStorage.removeItem(AUTH_KEY); setUser(null) },
+    logout: () => { void crmService.logout(); localStorage.removeItem(AUTH_KEY); setUser(null) },
   }), [user])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
