@@ -144,6 +144,17 @@ describe('preview fixture integrity', () => {
     }
   })
 
+  it('shows journeys Sales sent back in the Sales Rejected bucket, read-only', async () => {
+    // Anita Rawat is sent back before her meeting in the Sales demo too.
+    const rejected = state.leads.filter(lead => lead.stage === 'Sales Rejected')
+    expect(rejected.map(lead => lead.journeyId)).toEqual(['KX-2026-000233'])
+    const [anita] = rejected
+    expect(anita).toMatchObject({ name: 'Anita Rawat', phone: '+91 9876500233', handoffReference: 'KX-SH-2026-000233', salesQueue: 'New Leads' })
+    expect(anita.salesRejection).toMatchObject({ by: 'Tanvi Arora', attempts: 0 })
+    expect(anita.feedback.at(-1)).toMatchObject({ team: 'Sales', text: anita.salesRejection!.reason })
+    await expect(crmService.logContactAttempt('KX-2026-000233', { direction: 'Outbound', duration: 60, disposition: 'Interested', notes: 'Trying again', employee: 'Priya Singh' })).rejects.toThrow('Sales sent this journey back')
+  })
+
   it('keeps Dead Leads closed with a Not Interested reason', () => {
     for (const lead of state.leads.filter(item => item.stage === 'Lost')) {
       expect(lead.lostReason).toBe('Not Interested')
@@ -279,10 +290,14 @@ describe('local CRM service', () => {
       reference: 'KX-LS-2026-000241',
       status: 'Submitted',
       customerName: 'Rahul Sharma',
-      mobileNumber: '+91 98765 43210',
+      maskedMobile: '+91 98XXX XX210',
       locations: [{ name: 'Mohali', pincode: '160055' }],
       propertyType: 'Individual House (1 Floor / Villa)',
+      city: 'Mohali',
+      state: 'Punjab',
     })
+    // Never the full phone number.
+    expect(JSON.stringify(sent?.landSourcingHandoff)).not.toContain('43210')
     expect(sent?.activities.slice(0, 2).map(item => item.type)).toEqual(['Sales handoff', 'Land Sourcing handoff'])
 
     await crmService.markLandIdentified('KX-2026-000241')

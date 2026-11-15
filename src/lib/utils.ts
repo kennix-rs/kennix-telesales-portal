@@ -49,10 +49,21 @@ export function qualificationMissing(q: Qualification) {
 }
 
 export function stageTone(stage: Stage) {
-  return ({ New: 'blue', Attempted: 'amber', Contacted: 'teal', Qualification: 'violet', Qualified: 'green', Nurture: 'orange', Lost: 'slate' } as const)[stage]
+  return ({ New: 'blue', Attempted: 'amber', Contacted: 'teal', Qualification: 'violet', Qualified: 'green', Nurture: 'orange', Lost: 'slate', 'Sales Rejected': 'red' } as const)[stage]
 }
 
 export function normalizePhone(value: string) { return value.replace(/\D/g, '').slice(-10) }
+/**
+ * What Land Sourcing sees instead of the customer's number (decided 2026-11-11): enough to match a
+ * customer, not enough to call them, so the lead can't leak to agents. +91 98101 21737 → +91 98XXX XX737.
+ */
+export function maskMobile(value: string) { const digits = normalizePhone(value); return digits.length === 10 ? `+91 ${digits.slice(0, 2)}XXX XX${digits.slice(-3)}` : 'XXXXX' }
+/** State for the cities the demo uses; Land Sourcing gets the main city and state. */
+const CITY_STATES: Record<string, string> = {
+  Chandigarh: 'Chandigarh', Mohali: 'Punjab', Zirakpur: 'Punjab', Kharar: 'Punjab', 'New Chandigarh': 'Punjab', Ludhiana: 'Punjab',
+  Panchkula: 'Haryana', Gurugram: 'Haryana', 'Delhi NCR': 'Delhi', Delhi: 'Delhi', Noida: 'Uttar Pradesh',
+}
+export function stateFor(city: string) { return CITY_STATES[city] ?? '' }
 export function normalizeEmail(value: string) { return value.trim().toLowerCase() }
 /** Team reference for a journey: the journey ID with the team code inserted, e.g. KX-2026-000241 → KX-LS-2026-000241. */
 export function teamReference(teamCode: 'LS' | 'SH', journeyId: string) { return journeyId.replace(/^KX-/, `KX-${teamCode}-`) }

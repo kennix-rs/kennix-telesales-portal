@@ -44,9 +44,11 @@ interface ApiLead {
   nextAction: string; nextActionAt: string | null; lastDisposition: EnumValue | null
   salesQueue: EnumValue | null; duplicateStatus: EnumValue | null; duplicateOf: string | null
   lostReason: string | null; handoffReference: string | null
+  salesRejection?: { at: string; by: string; reason: string; attempts: number } | null
   landSourcingHandoff: {
     reference: string; status: EnumValue; submittedAt: string; completedAt: string | null
-    customerName: string; mobileNumber: string; locations: ApiLocation[]; propertyType: EnumValue
+    customerName: string; maskedMobile: string; locations: ApiLocation[]; propertyType: EnumValue
+    size: EnumValue | null; budget: EnumValue | null; city: string; state: string
   } | null
   qualification: ApiQualification
   contacts: { id: string; direction: EnumValue; duration: number; disposition: EnumValue; notes: string; date: string; employee: string; followUpId: string | null }[]
@@ -135,6 +137,7 @@ function toLead(lead: ApiLead): Lead {
     })),
     activities: lead.activities.map(item => ({ ...item })),
     lostReason: lead.lostReason ?? undefined,
+    ...(lead.salesRejection ? { salesRejection: { ...lead.salesRejection } } : {}),
     handoffReference: lead.handoffReference ?? undefined,
     salesQueue: optional(lead.salesQueue),
     ...(lead.landSourcingHandoff ? {
@@ -144,7 +147,10 @@ function toLead(lead: ApiLead): Lead {
         submittedAt: lead.landSourcingHandoff.submittedAt,
         completedAt: lead.landSourcingHandoff.completedAt ?? undefined,
         customerName: lead.landSourcingHandoff.customerName,
-        mobileNumber: lead.landSourcingHandoff.mobileNumber,
+        maskedMobile: lead.landSourcingHandoff.maskedMobile,
+        size: label(lead.landSourcingHandoff.size) as Lead['qualification']['size'] & string,
+        budget: label(lead.landSourcingHandoff.budget) as Lead['qualification']['budget'] & string,
+        city: lead.landSourcingHandoff.city, state: lead.landSourcingHandoff.state,
         locations: lead.landSourcingHandoff.locations,
         propertyType: label(lead.landSourcingHandoff.propertyType) as Lead['qualification']['propertyType'] & string,
       },
